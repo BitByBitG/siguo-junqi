@@ -86,6 +86,23 @@ test("中央保留九点，并由第 1、3、5 列形成六条贯通直道", () 
   assert.equal(validateMove(room, "north", "north-0-0", "south-0-4").ok, false);
 });
 
+test("边缘纵向铁路穿过中央后可直达对面同一视觉列", () => {
+  const room = {
+    phase: "playing", turn: "north", mode: "ffa", activeSeats: ["north", "south"],
+    pieces: [{ id: "a", owner: "north", type: "platoon", position: "north-2-0" }],
+  };
+  assert.equal(validateMove(room, "north", "north-2-0", "south-2-4").ok, true);
+});
+
+test("两人或三人局不能进入或经过无人阵营", () => {
+  const room = {
+    phase: "playing", turn: "north", mode: "ffa", activeSeats: ["north", "east", "south"],
+    pieces: [{ id: "a", owner: "north", type: "engineer", position: "north-0-0" }],
+  };
+  assert.equal(validateMove(room, "north", "north-0-0", "west-0-4").ok, false);
+  assert.equal(validateMove(room, "north", "north-0-0", "west-4-4").ok, false);
+});
+
 test("相邻两方边缘铁路通过唯一角点接成一条逻辑直道", () => {
   const seats = ["north", "east", "south", "west"];
   for (let index = 0; index < seats.length; index += 1) {

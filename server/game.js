@@ -138,6 +138,14 @@ export function buildBoard() {
   }
   straightRailLines.push(...centerLines);
 
+  // Opposing edge rails and the matching central rail form one uninterrupted line.
+  straightRailLines.push(
+    [...Array.from({ length: 5 }, (_, row) => nodeId("north", 4 - row, 0)), ...centerLines[0].slice(1, -1), ...Array.from({ length: 5 }, (_, row) => nodeId("south", row, 4))],
+    [...Array.from({ length: 5 }, (_, row) => nodeId("north", 4 - row, 4)), ...centerLines[2].slice(1, -1), ...Array.from({ length: 5 }, (_, row) => nodeId("south", row, 0))],
+    [...Array.from({ length: 5 }, (_, row) => nodeId("west", 4 - row, 4)), ...centerLines[3].slice(1, -1), ...Array.from({ length: 5 }, (_, row) => nodeId("east", row, 0))],
+    [...Array.from({ length: 5 }, (_, row) => nodeId("west", 4 - row, 0)), ...centerLines[5].slice(1, -1), ...Array.from({ length: 5 }, (_, row) => nodeId("east", row, 4))],
+  );
+
   // 四个角各只有一个弯道；弯道两侧在规则上视为同一条直线铁路。
   const cornerLinks = [];
   for (let index = 0; index < SEATS.length; index += 1) {
@@ -264,19 +272,24 @@ export function pieceAt(pieces, position) {
   return pieces.find((piece) => piece.position === position) || null;
 }
 
-function isStraightRailPath(from, to, pieces) {
+function canEnterNode(position, activeSeatSet) {
+  const node = BOARD.byId.get(position);
+  return !node?.seat || activeSeatSet.has(node.seat);
+}
+
+function isStraightRailPath(from, to, pieces, activeSeatSet) {
   for (const line of BOARD.straightRailLines) {
     const fromIndex = line.indexOf(from);
     const toIndex = line.indexOf(to);
     if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) continue;
     const begin = Math.min(fromIndex, toIndex) + 1;
     const end = Math.max(fromIndex, toIndex);
-    if (line.slice(begin, end).every((position) => !pieceAt(pieces, position))) return true;
+    if (line.slice(begin, end).every((position) => canEnterNode(position, activeSeatSet) && !pieceAt(pieces, position))) return true;
   }
   return false;
 }
 
-function isEngineerRailPath(from, to, pieces) {
+function isEngineerRailPath(from, to, pieces, activeSeatSet) {
   const queue = [from];
   const seen = new Set([from]);
   while (queue.length) {
@@ -284,6 +297,7 @@ function isEngineerRailPath(from, to, pieces) {
     if (current === to) return true;
     for (const next of BOARD.railNeighbors.get(current)) {
       if (seen.has(next)) continue;
+      if (!canEnterNode(next, activeSeatSet)) continue;
       if (next !== to && pieceAt(pieces, next)) continue;
       seen.add(next);
       queue.push(next);
@@ -301,7 +315,9 @@ export function validateMove(room, seat, from, to) {
   if (!source || !target) return { ok: false, message: "无效位置" };
   const attacker = pieceAt(room.pieces, from);
   const defender = pieceAt(room.pieces, to);
+  const activeSeatSet = new Set(room.activeSeats || SEATS);
   if (!attacker || attacker.owner !== seat) return { ok: false, message: "请选择自己的棋子" };
+  if (!canEnterNode(to, activeSeatSet)) return { ok: false, message: "不能进入无人阵营" };
   if (PIECE_INFO[attacker.type].immobile || source.kind === "hq") {
     return { ok: false, message: "这枚棋子不能移动" };
   }
@@ -316,8 +332,8 @@ export function validateMove(room, seat, from, to) {
   if (direct) return { ok: true, attacker, defender };
   if (!rail || !BOARD.railNeighbors.get(to).length) return { ok: false, message: "两点之间没有道路" };
   const reachable = attacker.type === "engineer"
-    ? isEngineerRailPath(from, to, room.pieces)
-    : isStraightRailPath(from, to, room.pieces);
+    ? isEngineerRailPath(from, to, room.pieces, activeSeatSet)
+    : isStraightRailPath(from, to, room.pieces, activeSeatSet);
   return reachable
     ? { ok: true, attacker, defender }
     : { ok: false, message: attacker.type === "engineer" ? "铁路路线被阻挡" : "只有工兵能在铁路上转弯" };
