@@ -47,7 +47,9 @@ test("工兵可在连通铁路上转弯，路径不能穿过棋子", () => {
     mode: "ffa",
     pieces: [{ id: "a", owner: "north", type: "engineer", position: "north-0-0" }],
   };
-  assert.equal(validateMove(room, "north", "north-0-0", "north-4-4").ok, true);
+  const turningMove = validateMove(room, "north", "north-0-0", "north-4-4");
+  assert.equal(turningMove.ok, true);
+  assert.equal(turningMove.engineerTurn, true);
   for (const [index, position] of BOARD.railNeighbors.get("north-0-0").entries()) {
     room.pieces.push({ id: `block-${index}`, owner: "south", type: "platoon", position });
   }

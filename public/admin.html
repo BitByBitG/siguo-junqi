@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>账号管理 · 四国军棋</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="admin-page">
+    <main class="admin-shell">
+      <header><a href="/">← 返回游戏</a><button data-stealth class="icon-button" type="button">隐蔽模式</button><h1>账号管理</h1></header>
+      <form id="account-form" class="admin-form">
+        <label><span>管理密钥</span><input id="admin-key" class="text-input" type="password" required /></label>
+        <label><span>新账号</span><input id="username" class="text-input" minlength="2" maxlength="20" required /></label>
+        <label><span>初始密码</span><input id="password" class="text-input" type="password" minlength="6" required /></label>
+        <button class="primary-button" type="submit">创建账号</button>
+      </form>
+      <p id="admin-result" role="status"></p>
+      <section aria-labelledby="accounts-title">
+        <h2 id="accounts-title">账号列表</h2>
+        <button id="refresh-accounts" class="secondary-button" type="button">加载 / 刷新列表</button>
+        <div id="account-list" class="account-list">输入管理密钥后加载列表</div>
+      </section>
+      <section><h2>注册申请</h2><button id="refresh-requests" class="secondary-button" type="button">加载 / 刷新申请</button><div id="request-list" class="account-list">输入管理密钥后加载申请</div></section>
+    </main>
+    <script src="/theme.js"></script>
+    <script type="module">
+      const form = document.querySelector("#account-form");
+      const result = document.querySelector("#admin-result");
+
+      const list = document.querySelector("#account-list");
+      const headers = () => ({ "content-type": "application/json", "x-admin-key": document.querySelector("#admin-key").value });
+      async function request(url, options = {}) {
+        const response = await fetch(url, { ...options, headers: headers() });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || "操作失败");
+        return body;
+      }
+      async function loadAccounts() {
+        list.textContent = "加载中…";
+        try {
+          const accounts = await request("/api/admin/accounts");
+          list.replaceChildren();
+          if (!accounts.length) list.textContent = "暂无账号";
+          for (const username of accounts) {
+            const row = document.createElement("div");
+            row.className = "account-row";
+            const name = document.createElement("span");
+            name.textContent = username;
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "icon-button danger-text";
+            button.textContent = "删除";
+            button.setAttribute("aria-label", "删除账号 " + username);
+            button.onclick = async () => {
+              if (!confirm("确定删除账号「" + username + "」？该账号将退出登录，删除后无法恢复。")) return;
+              button.disabled = true;
+              try {
+                await request("/api/admin/accounts/" + encodeURIComponent(username), { method: "DELETE" });
+                result.textContent = "账号 " + username + " 已删除";
+                await loadAccounts();
+              } catch (error) { result.textContent = error.message; button.disabled = false; }
+            };
+            row.append(name, button);
+            list.append(row);
+          }
+        } catch (error) { list.textContent = error.message; }
+      }
+      async function loadRequests() {
+        const target = document.querySelector("#request-list");
+        target.textContent = "加载中…";
+        try {
+          const items = await request("/api/admin/registrations");
+          target.replaceChildren();
+          if (!items.length) target.textContent = "暂无待审核申请";
+          for (const item of items) {
+            const row = document.createElement("div"); row.className = "account-row";
+            const label = document.createElement("span"); label.textContent = item.username + " · " + new Date(item.createdAt).toLocaleString(); row.append(label);
+            for (const [action, text] of [["approve", "通过"], ["reject", "拒绝"]]) {
+              const button = document.createElement("button"); button.type = "button"; button.className = "icon-button"; button.textContent = text;
+              button.onclick = async () => {
+                row.querySelectorAll("button").forEach(b => b.disabled = true);
+                try { await request("/api/admin/registrations/" + encodeURIComponent(item.username), { method: "POST", body: JSON.stringify({ action }) }); result.textContent = item.username + "：已" + text; await loadRequests(); await loadAccounts(); }
+                catch (error) { result.textContent = error.message; row.querySelectorAll("button").forEach(b => b.disabled = false); }
+              }; row.append(button);
+            }
+            target.append(row);
+          }
+        } catch (error) { target.textContent = error.message; }
+      }
+      document.querySelector("#refresh-requests").onclick = loadRequests;
+      document.querySelector("#admin-key").addEventListener("change", loadRequests);
+      document.querySelector("#refresh-accounts").onclick = loadAccounts;
+      document.querySelector("#admin-key").addEventListener("change", loadAccounts);
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const button = form.querySelector('button[type="submit"]');
+        button.disabled = true;
+        try {
+          const body = await request("/api/admin/accounts", {
+            method: "POST",
+            body: JSON.stringify({ username: document.querySelector("#username").value, password: document.querySelector("#password").value }),
+          });
+          result.textContent = "账号 " + body.username + " 已创建";
+          document.querySelector("#username").value = "";
+          document.querySelector("#password").value = "";
+          await loadAccounts();
+        } catch (error) { result.textContent = error.message; }
+        finally { button.disabled = false; }
+      });
+    </script>
+  </body>
+</html>

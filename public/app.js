@@ -4,6 +4,7 @@ const $ = (selector) => document.querySelector(selector);
 const entryScreen = $("#entry-screen");
 const gameScreen = $("#game-screen");
 const nameInput = $("#player-name");
+const passwordInput = $("#player-password");
 const codeInput = $("#room-code");
 const capacityInput = $("#room-capacity");
 const modeInput = $("#room-mode");
@@ -23,9 +24,13 @@ let selected = null;
 let awaitingRoom = false;
 let toastTimer = null;
 let stealthMode = localStorage.getItem("junqi-stealth") === "1";
+let auth = null;
+let pieceMarks = {};
+let markTarget = null;
+let roomList = [];
 
-const savedName = localStorage.getItem("junqi-name");
-if (savedName) nameInput.value = savedName;
+try { auth = JSON.parse(localStorage.getItem("junqi-auth")); } catch { auth = null; }
+if (auth?.username) nameInput.value = auth.username;
 const invitedCode = new URLSearchParams(location.search).get("room");
 if (invitedCode) codeInput.value = invitedCode.toUpperCase().slice(0, 6);
 
@@ -66,11 +71,33 @@ function escapeHtml(value) {
   return String(value).replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
 }
 
-function playerName() {
-  const value = nameInput.value.trim().slice(0, 16) || "玩家";
-  localStorage.setItem("junqi-name", value);
-  return value;
+function showAuthenticated() {
+  if (!auth?.token) return;
+  document.querySelectorAll("[data-logout]").forEach(button => button.classList.remove("hidden"));
+  $("#login-title").textContent = `已登录：${auth.username}`;
+  $("#login-form").classList.add("logged-in");
+  $("#entry-actions").classList.remove("hidden");
 }
+
+showAuthenticated();
+
+$("#login-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    const response = await fetch("/api/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: nameInput.value.trim(), password: passwordInput.value }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error);
+    auth = result;
+    localStorage.setItem("junqi-auth", JSON.stringify(auth));
+    passwordInput.value = "";
+    showAuthenticated();
+    showToast("登录成功", "success");
+  } catch (error) { showToast(error.message || "登录失败"); }
+});
 
 function updateModeInput() {
   modeInput.disabled = capacityInput.value !== "4";
@@ -84,7 +111,7 @@ $("#create-form").addEventListener("submit", (event) => {
   event.preventDefault();
   awaitingRoom = true;
   socket.emit("create-room", {
-    name: playerName(),
+    authToken: auth?.token,
     capacity: Number(capacityInput.value),
     mode: modeInput.value,
   });
@@ -95,7 +122,7 @@ $("#join-form").addEventListener("submit", (event) => {
   const code = codeInput.value.trim().toUpperCase();
   if (code.length !== 6) return showToast("请输入六位房间码");
   awaitingRoom = true;
-  socket.emit("join-room", { name: playerName(), code });
+  socket.emit("join-room", { authToken: auth?.token, code });
 });
 
 codeInput.addEventListener("input", () => {
@@ -109,7 +136,7 @@ socket.on("connect", () => {
   const inviteMatches = !invitedCode || invitedCode.toUpperCase() === session?.code;
   if (session?.code && session?.token && !state && inviteMatches) {
     awaitingRoom = true;
-    socket.emit("join-room", session);
+    socket.emit("join-room", { ...session, authToken: auth?.token });
   }
 });
 
@@ -120,8 +147,7 @@ socket.on("disconnect", () => {
 });
 
 socket.on("session", (session) => {
-  const name = nameInput.value.trim() || getSession()?.name || "玩家";
-  setSession({ ...session, name });
+  setSession(session);
   history.replaceState(null, "", `?room=${session.code}`);
 });
 
@@ -133,6 +159,7 @@ socket.on("board-meta", (meta) => {
 socket.on("room-state", (nextState) => {
   awaitingRoom = false;
   state = nextState;
+  try { pieceMarks = JSON.parse(localStorage.getItem(`junqi-marks-${state.code}`) || "{}"); } catch { pieceMarks = {}; }
   if (selected && !state.pieces.some((piece) => piece.position === selected)) selected = null;
   entryScreen.classList.add("hidden");
   gameScreen.classList.remove("hidden");
@@ -148,6 +175,42 @@ socket.on("game-error", (message) => {
 });
 
 socket.on("session-replaced", () => showToast("此座位已在另一个页面连接"));
+function exitClosedRoom(message) {
+  clearSession(); state = null; selected = null; closeMarkMenu();
+  gameScreen.classList.add("hidden"); entryScreen.classList.remove("hidden");
+  history.replaceState(null, "", location.pathname); showToast(message);
+}
+socket.on("kicked", () => exitClosedRoom("你已被房主踢出房间"));
+socket.on("room-closed", () => exitClosedRoom("房主已关闭房间"));
+
+socket.on("room-list", (rooms) => {
+  roomList = rooms;
+  renderRoomList();
+});
+
+function renderRoomList() {
+  const list = $("#room-list");
+  if (!list) return;
+  list.replaceChildren();
+  if (!roomList.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-log";
+    empty.textContent = "暂无房间";
+    list.append(empty);
+    return;
+  }
+  for (const room of roomList) {
+    const row = document.createElement("article");
+    row.className = "room-row";
+    const phase = { setup: "布阵中", playing: "对局中", finished: "已结束" }[room.phase];
+    row.innerHTML = `<div><strong>${room.code}</strong><span>${room.players}/${room.capacity} 人 · ${phase} · ${room.spectators} 人在场</span></div><button type="button">进入</button>`;
+    row.querySelector("button").addEventListener("click", () => {
+      awaitingRoom = true;
+      socket.emit("watch-room", { code: room.code, authToken: auth?.token });
+    });
+    list.append(row);
+  }
+}
 
 function transformPoint(point) {
   const seat = state?.viewerSeat || "south";
@@ -260,6 +323,15 @@ function renderBoard() {
       label.textContent = boardMeta.pieceNames[piece.type];
       group.append(label);
     }
+    if (piece.owner !== state.viewerSeat && pieceMarks[piece.id]) {
+      const guess = svgElement("text", { x: point.x, y: point.y + 0.018, class: "piece-guess" });
+      guess.textContent = pieceMarks[piece.id];
+      group.append(guess);
+    }
+    group.addEventListener("contextmenu", (event) => {
+      if (piece.owner === state.viewerSeat) return;
+      event.preventDefault(); event.stopPropagation(); openMarkMenu(piece, event);
+    });
     if (lastMoved) {
       group.append(svgElement("rect", {
         x: point.x - 0.48,
@@ -279,8 +351,34 @@ function renderBoard() {
   boardSvg.append(moveLayer, nodeLayer, pieceLayer);
 }
 
+function openMarkMenu(piece, event) {
+  markTarget = piece.id;
+  const menu = $("#piece-mark-menu");
+  menu.replaceChildren();
+  for (const name of Object.values(boardMeta.pieceNames)) {
+    const button = document.createElement("button");
+    button.type = "button"; button.role = "menuitem"; button.textContent = name;
+    if (pieceMarks[piece.id] === name) button.classList.add("selected");
+    button.addEventListener("click", () => {
+      pieceMarks[piece.id] = name; saveMarks(); closeMarkMenu(); renderBoard();
+    });
+    menu.append(button);
+  }
+  const clear = document.createElement("button");
+  clear.type = "button"; clear.role = "menuitem"; clear.className = "clear-mark"; clear.textContent = "清除标记";
+  clear.addEventListener("click", () => {
+    delete pieceMarks[piece.id]; saveMarks(); closeMarkMenu(); renderBoard();
+  });
+  menu.append(clear);
+  menu.style.left = `${Math.max(8, Math.min(event.clientX, innerWidth - 238))}px`;
+  menu.style.top = `${Math.max(8, Math.min(event.clientY, innerHeight - 188))}px`;
+  menu.classList.remove("hidden");
+}
+function closeMarkMenu() { $("#piece-mark-menu").classList.add("hidden"); markTarget = null; }
+function saveMarks() { localStorage.setItem(`junqi-marks-${state.code}`, JSON.stringify(pieceMarks)); }
+
 function handleBoardClick(position) {
-  if (!state || state.phase === "finished") return;
+  if (!state || state.spectator || state.phase === "finished") return;
   const piece = state.pieces.find((item) => item.position === position);
   if (state.phase === "setup") {
     const me = state.players.find((player) => player.seat === state.viewerSeat);
@@ -315,12 +413,19 @@ function handleBoardClick(position) {
 }
 
 function playerStatus(player) {
-  if (player.empty) return "等待加入";
+  if (player.empty) return state.phase === "playing" ? "等待接替" : "等待落座";
   if (player.eliminated) return "已退出对局";
   if (!player.online) return "等待重连";
   if (state.phase === "setup") return player.ready ? "已准备" : "正在布阵";
   if (state.phase === "finished") return "对局结束";
   return state.turn === player.seat ? "正在行动" : "等待行动";
+}
+
+function kickButton(name) {
+  const button = document.createElement("button");
+  button.className = "kick-button"; button.type = "button"; button.textContent = "踢出";
+  button.addEventListener("click", () => { if (confirm(`确定踢出 ${name} 吗？`)) socket.emit("kick-member", { name }); });
+  return button;
 }
 
 function renderPlayers() {
@@ -332,14 +437,19 @@ function renderPlayers() {
     card.style.setProperty("--seat-color", seatColor(player.seat) || "#aaa");
     const me = player.seat === state.viewerSeat ? " · 你" : "";
     const host = player.isHost ? " · 房主" : "";
-    card.innerHTML = `
-      <div class="seat-badge">${seatShort[player.seat]}</div>
-      <div class="player-info">
-        <div class="player-name">${player.empty ? "空座" : escapeHtml(player.name)}${me}</div>
-        <div class="player-status">${boardMeta?.seatNames[player.seat] || player.seat}${host}</div>
-      </div>
-      <div class="player-state">${playerStatus(player)}</div>`;
+    card.innerHTML = `<div class="seat-badge">${seatShort[player.seat]}</div><div class="player-info"><div class="player-name">${player.empty ? "空座" : escapeHtml(player.name)}${me}</div><div class="player-status">${boardMeta?.seatNames[player.seat] || player.seat}${host}</div></div><div class="player-state">${playerStatus(player)}</div>`;
+    if (state.isHost && !player.empty && !player.isHost) card.append(kickButton(player.name));
     list.append(card);
+  }
+  const watchers = $("#spectators-list"); watchers.replaceChildren();
+  if (state.spectators?.length) {
+    const title = document.createElement("strong"); title.textContent = "离座 / 观战"; watchers.append(title);
+    for (const member of state.spectators) {
+      const row = document.createElement("div"); row.className = "spectator-row";
+      const label = document.createElement("span"); label.textContent = member.name + (member.isHost ? " · 房主" : member.name === state.viewerName ? " · 你" : ""); row.append(label);
+      if (state.isHost && !member.isHost) row.append(kickButton(member.name));
+      watchers.append(row);
+    }
   }
 }
 
@@ -353,41 +463,35 @@ function addControl(label, className, action, disabled = false) {
 }
 
 function renderControls() {
-  const hostControls = $("#host-controls");
-  const boardControls = $("#board-controls");
-  hostControls.replaceChildren();
-  boardControls.replaceChildren();
+  const hostControls = $("#host-controls"), boardControls = $("#board-controls");
+  hostControls.replaceChildren(); boardControls.replaceChildren();
   const me = state.players.find((player) => player.seat === state.viewerSeat);
-
-  if (state.phase === "setup") {
-    boardControls.append(
-      addControl("随机布阵", "alt", () => { selected = null; socket.emit("randomize-setup"); }, me?.ready),
-      addControl(me?.ready ? "取消准备" : "完成布阵", "", () => { selected = null; socket.emit("toggle-ready"); }),
-    );
-    const hint = document.createElement("span");
-    hint.className = "setup-hint";
-    hint.textContent = me?.ready ? "等待其他玩家与房主开始" : "点击两枚棋子交换位置";
-    boardControls.append(hint);
-
-    if (state.viewerSeat === state.hostSeat) {
+  if (state.isHost) {
+    if (state.phase === "setup") {
       const full = state.players.every((player) => !player.empty);
       const allReady = full && state.players.every((player) => player.ready);
       hostControls.append(addControl("开始对局", "", () => socket.emit("start-game"), !allReady));
-      if (!allReady) {
-        const hintText = document.createElement("div");
-        hintText.className = "setup-hint";
-        hintText.textContent = full ? "所有玩家准备后即可开始" : `等待 ${state.capacity - state.players.filter((p) => !p.empty).length} 名玩家加入`;
-        hostControls.append(hintText);
-      }
     }
+    hostControls.append(addControl("关闭房间", "danger", () => { if (confirm("确定关闭房间并让所有人退出吗？")) socket.emit("close-room"); }));
+  }
+  if (state.phase === "setup") {
+    if (state.spectator) {
+      const label = document.createElement("strong"); label.textContent = "选择空方向落座："; boardControls.append(label);
+      for (const player of state.players.filter(item => item.empty)) boardControls.append(addControl(boardMeta.seatNames[player.seat], "alt", () => socket.emit("take-seat", { seat: player.seat })));
+      const hint = document.createElement("span"); hint.className = "setup-hint"; hint.textContent = "当前为离座状态，等价于观战"; boardControls.append(hint);
+    } else {
+      boardControls.append(addControl("随机布阵", "alt", () => { selected = null; socket.emit("randomize-setup"); }, me?.ready), addControl(me?.ready ? "取消准备" : "完成布阵", "", () => { selected = null; socket.emit("toggle-ready"); }), addControl("离座观战", "alt", () => { selected = null; socket.emit("leave-seat"); }));
+      const hint = document.createElement("span"); hint.className = "setup-hint"; hint.textContent = me?.ready ? "等待其他玩家与房主开始" : "点击两枚棋子交换位置"; boardControls.append(hint);
+    }
+  } else if (state.spectator && state.phase === "playing") {
+    const badge = document.createElement("strong"); badge.textContent = "观战模式 · 可接替空缺方向："; boardControls.append(badge);
+    for (const player of state.players.filter(item => item.empty)) boardControls.append(addControl(boardMeta.seatNames[player.seat], "alt", () => socket.emit("take-seat", { seat: player.seat })));
+  } else if (state.spectator) {
+    const badge = document.createElement("strong"); badge.textContent = "观战模式 · 棋子名称已隐藏"; boardControls.append(badge);
   } else if (state.phase === "playing" && !me?.eliminated) {
-    boardControls.append(addControl("认输", "danger", () => {
-      if (confirm("确认认输并退出本局吗？")) socket.emit("resign");
-    }));
+    boardControls.append(addControl("离座观战", "alt", () => { if (confirm("离座后棋子会原位保留，其他人可以接替。确定离座吗？")) socket.emit("leave-seat"); }), addControl("认输", "danger", () => { if (confirm("确认认输并退出本局吗？")) socket.emit("resign"); }));
   } else if (state.phase === "finished") {
-    const result = document.createElement("strong");
-    result.textContent = `${state.winner}获胜`;
-    boardControls.append(result);
+    const result = document.createElement("strong"); result.textContent = `${state.winner}获胜`; boardControls.append(result);
   }
 }
 
@@ -403,10 +507,22 @@ function renderLogs() {
   }
   for (const item of state.logs) {
     const element = document.createElement("div");
-    element.className = `log-item ${item.tone || ""}`;
+    element.className = `log-item ${item.tone || ""} ${item.private ? "private" : ""}`;
     element.textContent = item.text;
     log.append(element);
   }
+}
+
+function renderChat() {
+  const list = $("#chat-list");
+  list.replaceChildren();
+  for (const item of state.chat || []) {
+    const row = document.createElement("div");
+    row.className = "chat-item";
+    row.innerHTML = `<strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.text)}</span>`;
+    list.append(row);
+  }
+  list.scrollTop = list.scrollHeight;
 }
 
 function render() {
@@ -423,11 +539,22 @@ function render() {
   } else {
     $("#turn-banner").textContent = "完成布阵并准备，等待房主开局";
   }
+  if (state.spectator) $("#turn-banner").textContent = `正在观战 · ${$("#turn-banner").textContent}`;
   renderPlayers();
   renderBoard();
   renderControls();
   renderLogs();
+  renderChat();
 }
+
+$("#chat-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const input = $("#chat-input");
+  const text = input.value.trim();
+  if (!text) return;
+  socket.emit("chat-message", { text });
+  input.value = "";
+});
 
 $("#room-code-button").addEventListener("click", async () => {
   const url = `${location.origin}${location.pathname}?room=${state.code}`;
@@ -438,6 +565,8 @@ $("#room-code-button").addEventListener("click", async () => {
     showToast(`房间码：${state.code}`, "success");
   }
 });
+
+document.addEventListener("click", event => { if (!event.target.closest("#piece-mark-menu")) closeMarkMenu(); });
 
 $("#leave-button").addEventListener("click", () => {
   if (!confirm("确认离开当前房间吗？")) return;
@@ -450,18 +579,39 @@ $("#leave-button").addEventListener("click", () => {
   entryScreen.classList.remove("hidden");
 });
 
-const rulesDialog = $("#rules-dialog");
 $("#stealth-button").addEventListener("click", () => {
   stealthMode = !stealthMode;
   localStorage.setItem("junqi-stealth", stealthMode ? "1" : "0");
   applyStealthMode();
+  window.dispatchEvent(new Event("junqi-theme-refresh"));
   if (state) {
     renderPlayers();
     renderBoard();
   }
 });
-$("#rules-button").addEventListener("click", () => rulesDialog.showModal());
-$("#close-rules").addEventListener("click", () => rulesDialog.close());
-rulesDialog.addEventListener("click", (event) => {
-  if (event.target === rulesDialog) rulesDialog.close();
+
+socket.on("account-deleted", () => {
+  localStorage.removeItem("junqi-auth");
+  localStorage.removeItem("junqi-session");
+  window.location.reload();
+});
+
+window.addEventListener("junqi-theme", () => { stealthMode = localStorage.getItem("junqi-stealth") === "1"; applyStealthMode(); if (state) { renderPlayers(); renderBoard(); } });
+
+document.querySelectorAll("[data-logout]").forEach(button => {
+  button.addEventListener("click", async () => {
+    document.querySelectorAll("[data-logout]").forEach(item => item.disabled = true);
+    try {
+      const response = await fetch("/api/logout", { method: "POST", headers: { Authorization: "Bearer " + (auth?.token || "") } });
+      if (!response.ok) throw new Error("退出失败，请重试");
+      socket.disconnect();
+      localStorage.removeItem("junqi-auth");
+      localStorage.removeItem("junqi-session");
+      auth = null;
+      window.location.assign("/");
+    } catch (error) {
+      showToast(error.message || "退出失败，请重试");
+      document.querySelectorAll("[data-logout]").forEach(item => item.disabled = false);
+    }
+  });
 });

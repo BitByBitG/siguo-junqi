@@ -306,6 +306,10 @@ function isEngineerRailPath(from, to, pieces, activeSeatSet) {
   return false;
 }
 
+function engineerNeedsTurn(from, to, pieces, activeSeatSet) {
+  return !isStraightRailPath(from, to, pieces, activeSeatSet);
+}
+
 export function validateMove(room, seat, from, to) {
   if (room.phase !== "playing") return { ok: false, message: "对局尚未开始" };
   if (room.turn !== seat) return { ok: false, message: "还没有轮到你" };
@@ -329,13 +333,13 @@ export function validateMove(room, seat, from, to) {
 
   const direct = BOARD.neighbors.get(from).includes(to);
   const rail = BOARD.rails.has(edgeKey(from, to)) || BOARD.railNeighbors.get(from).length > 0;
-  if (direct) return { ok: true, attacker, defender };
+  if (direct) return { ok: true, attacker, defender, engineerTurn: false };
   if (!rail || !BOARD.railNeighbors.get(to).length) return { ok: false, message: "两点之间没有道路" };
   const reachable = attacker.type === "engineer"
     ? isEngineerRailPath(from, to, room.pieces, activeSeatSet)
     : isStraightRailPath(from, to, room.pieces, activeSeatSet);
   return reachable
-    ? { ok: true, attacker, defender }
+    ? { ok: true, attacker, defender, engineerTurn: attacker.type === "engineer" && engineerNeedsTurn(from, to, room.pieces, activeSeatSet) }
     : { ok: false, message: attacker.type === "engineer" ? "铁路路线被阻挡" : "只有工兵能在铁路上转弯" };
 }
 

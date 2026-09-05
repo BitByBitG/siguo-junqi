@@ -12,21 +12,31 @@
     <div id="app">
       <main id="entry-screen" class="entry-shell">
         <section class="brand-panel">
-          <div class="brand-mark" aria-hidden="true">帥</div>
-          <p class="eyebrow">ONLINE BOARD GAME</p>
-          <h1>四国军棋</h1>
-          <p class="brand-copy">创建房间，把房间码发给朋友。所有判定都在主机完成，暗棋不会发送给对手。</p>
-          <div class="rule-chips" aria-label="游戏特性">
-            <span>2–4 人</span><span>实时对局</span><span>无需账号</span>
-          </div>
+          <h1 class="home-title"><span>四国</span><span>军棋</span></h1>
+          <section class="home-rules" aria-labelledby="home-rules-title">
+            <h2 id="home-rules-title">对局规则</h2>
+            <p>点击己方棋子后选择目标位置。工兵能沿铁路转弯，其他棋子只能沿连续直线铁路行进；工兵一旦走出非直线路径，将公开标注为工兵。</p>
+            <ul>
+              <li>军旗和地雷不能移动，大本营中的棋子也不能移动。</li>
+              <li>行营中的棋子不能被攻击；第三行第三列的中央行营不接铁路。</li>
+              <li>工兵排雷；炸弹及同级棋子交战时双方同时阵亡。</li>
+              <li>中央保留九个铁路点，四角弯道按连续直道处理。</li>
+              <li>司令阵亡后军旗公开；夺旗或认输后该阵营退出。</li>
+            </ul>
+          </section>
         </section>
 
         <section class="entry-card">
           <div class="connection-line"><span id="connection-dot" class="status-dot"></span><span id="connection-text">正在连接</span></div>
-          <label class="field-label" for="player-name">你的称呼</label>
-          <input id="player-name" class="text-input" maxlength="16" autocomplete="nickname" placeholder="输入名字" />
+          <nav class="account-nav"><button data-stealth class="icon-button" type="button">隐蔽模式</button><a href="/register.html">申请注册</a><a href="/password.html">修改密码</a><button data-logout class="icon-button hidden" type="button">退出登录</button></nav>
+          <form id="login-form" class="action-block login-form">
+            <div class="section-heading"><div><span class="step-number">账号</span><h2 id="login-title">登录</h2></div></div>
+            <input id="player-name" class="text-input" maxlength="20" autocomplete="username" placeholder="账号" />
+            <input id="player-password" class="text-input" type="password" maxlength="64" autocomplete="current-password" placeholder="密码" />
+            <button class="primary-button" type="submit">登录</button>
+          </form>
 
-          <div class="entry-actions">
+          <div id="entry-actions" class="entry-actions hidden">
             <form id="create-form" class="action-block">
               <div class="section-heading">
                 <div><span class="step-number">01</span><h2>创建新房间</h2></div>
@@ -57,8 +67,12 @@
               </div>
               <label class="field-label" for="room-code">六位房间码</label>
               <input id="room-code" class="text-input code-input" maxlength="6" autocomplete="off" placeholder="例如 JQ8K2M" />
-              <button class="secondary-button" type="submit">加入对局</button>
+              <button class="secondary-button" type="submit">进入房间</button>
             </form>
+            <section class="room-browser">
+              <div class="section-heading"><div><span class="step-number">房间</span><h2>所有房间</h2></div></div>
+              <div id="room-list" class="room-list"><div class="empty-log">暂无房间</div></div>
+            </section>
           </div>
         </section>
       </main>
@@ -68,8 +82,8 @@
           <div class="topbar-title"><div class="mini-mark">帥</div><div><strong>四国军棋</strong><span id="phase-label">布阵中</span></div></div>
           <button id="room-code-button" class="room-code-button" title="复制邀请链接"><span>房间</span><strong id="room-code-label">------</strong><i>复制邀请</i></button>
           <div class="topbar-actions">
+            <button data-logout class="icon-button hidden" type="button">退出登录</button>
             <button id="stealth-button" class="icon-button" type="button" aria-pressed="false">隐蔽模式</button>
-            <button id="rules-button" class="icon-button" type="button">规则</button>
             <button id="leave-button" class="icon-button danger-text" type="button">离开</button>
           </div>
         </header>
@@ -78,7 +92,13 @@
           <aside class="players-panel panel">
             <div class="panel-heading"><h2>参战阵营</h2><span id="mode-label"></span></div>
             <div id="players-list" class="players-list"></div>
+            <div id="spectators-list" class="spectators-list"></div>
             <div id="host-controls" class="host-controls"></div>
+            <section class="chat-panel">
+              <div class="panel-heading"><h2>房间聊天</h2></div>
+              <div id="chat-list" class="chat-list"></div>
+              <form id="chat-form" class="chat-form"><input id="chat-input" maxlength="160" placeholder="说点什么" /><button type="submit">发送</button></form>
+            </section>
           </aside>
 
           <section class="board-stage">
@@ -99,22 +119,9 @@
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-
-    <dialog id="rules-dialog" class="rules-dialog">
-      <div class="dialog-header"><h2>对局规则</h2><button id="close-rules" aria-label="关闭">×</button></div>
-      <div class="rules-content">
-        <p>点击一枚己方棋子，再点击目标位置即可移动。工兵可以在有站点连接的铁路上转弯，其他棋子只能沿直线铁路行进；四个边缘角道虽然画成直角，但按连续直道处理。中央保留九个铁路点，工兵可在点上转向，其他棋子只能沿同一条中央直线行进。各方第三行第三列的中央行营不接铁路。</p>
-        <ul>
-          <li>军旗和地雷不能移动，大本营中的棋子也不能移动。</li>
-          <li>行营中的棋子不能被攻击。</li>
-          <li>工兵排雷；炸弹与任何棋子同归于尽；同级棋子同归于尽。</li>
-          <li>司令阵亡后，其所属阵营的军旗位置公开。</li>
-          <li>夺取军旗或对方认输后，该阵营退出对局。</li>
-        </ul>
-      </div>
-    </dialog>
+    <div id="piece-mark-menu" class="piece-mark-menu hidden" role="menu" aria-label="标记敌方棋子"></div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script type="module" src="/app.js"></script>
-  </body>
+  <script src="/theme.js"></script></body>
 </html>
