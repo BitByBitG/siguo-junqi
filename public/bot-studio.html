@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>BOT 工作台 · 四国军棋</title><link rel="stylesheet" href="/styles.css"><link rel="icon" type="image/png" href="/favicon.png?v=240"><link rel="apple-touch-icon" href="/favicon.png?v=240"><link rel="stylesheet" href="/cf-layout.css"></head>
+<body class="admin-page"><script type="module" src="/site-shell.js"></script><main class="admin-shell studio-shell">
+<header><h1>BOT 工作台</h1></header>
+<p id="account">正在读取账号…</p>
+<p>粘贴 JavaScript 程序，由网站服务器运行。房主在普通对局的「添加 BOT 账号」面板选择你的账号和方向；程序会自动布阵、准备和走子。退出登录后仍继续运行，点击停止才会结束托管。<a href="/downloads/bot-studio-bot.js" target="_blank" rel="noopener">打开可粘贴 BOT 源码</a></p>
+<div class="studio-toolbar"><button id="save">保存</button><button id="start">保存并启动</button><button id="stop">停止托管</button><strong id="running"></strong></div>
+<p id="program-status" role="status" aria-live="polite"></p>
+<label for="source">程序代码 · function act(state)</label>
+<textarea id="source" spellcheck="false" aria-label="BOT JavaScript 程序"></textarea>
+<p><a href="/BOT_API.md" download="BOT_API.md">下载 API 文档</a></p>
+</main><script type="module" src="/bot-studio.js"></script><script type="module" src="/user-colors.js"></script></body></html>

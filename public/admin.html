@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>账号管理 · 四国军棋</title>
+    <link rel="stylesheet" href="/styles.css" />
+  <link rel="icon" type="image/png" href="/favicon.png?v=240"><link rel="apple-touch-icon" href="/favicon.png?v=240"><link rel="stylesheet" href="/cf-layout.css"></head>
+  <body class="admin-page"><script type="module" src="/site-shell.js"></script>
+    <main class="admin-shell">
+      <header><h1>管理</h1></header><nav id="admin-directory" class="admin-directory" aria-label="管理目录"></nav>
+      <form id="account-form" class="admin-form">
+        <label><span>管理密钥</span><input id="admin-key" class="text-input" type="password" required /></label>
+        <label><span>新账号（2–16 位）</span><input id="username" class="text-input" minlength="2" maxlength="16" required /></label>
+        <label><span>初始密码</span><input id="password" class="text-input" type="password" minlength="6" required /></label>
+        <label><span>账号类型</span><select id="account-type" class="text-input"><option value="human">玩家账号</option><option value="bot">BOT 账号（程序参赛）</option><option value="admin">管理员账号</option></select></label>
+        <button class="primary-button" type="submit">创建账号</button>
+      </form>
+      <p id="admin-result" role="status"></p>
+      <section><h2>在线用户 <span id="online-count"></span></h2><button id="refresh-online" type="button">刷新在线状态</button><small>每 10 秒更新；关闭独立页面后最多 45 秒转为离线。</small><div id="online-users" class="online-users">验证管理员身份后显示</div></section>
+      <section><h2>图床管理</h2><div class="studio-toolbar"><button id="refresh-images" type="button">加载 / 刷新图片</button><button id="images-select-all" type="button">全选</button><button id="images-delete-selected" type="button">删除所选</button><span id="image-usage"></span></div><div id="image-gallery" class="image-gallery"></div></section>
+      <section aria-labelledby="accounts-title">
+        <h2 id="accounts-title">账号列表</h2>
+        <button id="refresh-accounts" class="secondary-button" type="button">加载 / 刷新列表</button>
+        <div id="account-list" class="account-list">输入管理密钥后加载列表</div>
+      </section>
+      <section><h2>注册申请</h2><button id="refresh-requests" class="secondary-button" type="button">加载 / 刷新申请</button><div id="request-list" class="account-list">输入管理密钥后加载申请</div></section>
+      <section><h2>所有房间</h2><button id="refresh-rooms" type="button" class="secondary-button">加载 / 刷新房间</button><div id="admin-rooms"></div></section>
+      <section><h2>聊天管理</h2><select id="admin-chat-scope"><option value="">首页聊天</option></select><button id="refresh-chat" type="button">加载 / 刷新</button><button id="chat-select-all" type="button">全选</button><button id="chat-delete-selected" type="button">删除所选</button><input id="mute-username" placeholder="要禁言的完整用户名" /><button id="mute-chat-user" type="button">禁言</button><div id="chat-mutes"></div><div id="admin-chat"></div></section>
+      <section><h2>分组管理</h2><div class="studio-toolbar"><input id="new-group-id" placeholder="分组 ID"><input id="new-group-name" placeholder="分组名称"><button id="create-group" type="button">新建分组</button><button id="refresh-groups" type="button">刷新</button><span id="group-refresh-status"></span></div><div id="admin-groups"></div><h3>成员设置</h3><div id="admin-group-members"></div></section><section><h2>公告管理</h2><button id="refresh-announcements" type="button">加载 / 刷新公告</button><div id="admin-announcements"></div><form id="admin-announcement-form" class="chat-form"><textarea id="admin-announcement-text" maxlength="8000" rows="4" placeholder="公告正文，支持 Markdown 与 LaTeX"></textarea><button type="submit">发布公告</button></form></section>
+    </main>
+    
+    <link rel="stylesheet" href="/vendor/katex/katex.min.css">
+    <script src="/vendor/marked/marked.umd.js"></script><script src="/vendor/dompurify/purify.min.js"></script><script src="/vendor/katex/katex.min.js"></script><script src="/vendor/katex/contrib/auto-render.min.js"></script>
+    <script type="module">
+      import "/secure.js";
+      import {renderRichChatBody,attachChatFold,releaseChatFolds} from "/chat-common.js";
+      import {colorRating} from '/rating-colors.js';
+      import {avatarImage,messageTime} from '/avatars.js';
+      function messageHeader(item){const span=document.createElement('span');span.className='chat-meta';if(localStorage.getItem('junqi-chat-avatars')!=='0'){const al=document.createElement('a');al.href='/profile/'+encodeURIComponent(item.name);al.className='avatar-profile-link';al.append(avatarImage(item.name,item.avatar));span.append(al);}const name=document.createElement('a');name.href='/profile/'+encodeURIComponent(item.name);name.textContent=item.name;colorRating(name,item.rating??1500);span.append(name);const time=messageTime(item.time);if(time)span.append(time);return span;}
+      import {displayImage} from "/chat-images.js";
+      const form = document.querySelector("#account-form");
+      const result = document.querySelector("#admin-result");
+
+      const list = document.querySelector("#account-list");
+      const headers = () => ({ "content-type": "application/json", "x-admin-key": document.querySelector("#admin-key").value, Authorization:'Bearer '+(JSON.parse(localStorage.getItem('junqi-auth')||'null')?.token||'') });
+      document.querySelector('#admin-key').required=false;
+      const directory=document.querySelector('#admin-directory');
+      for(const [i,section]of [...document.querySelectorAll('.admin-shell > section')].entries()){section.id='admin-section-'+i;const a=document.createElement('a');a.href='#'+section.id;a.textContent=section.querySelector('h2').childNodes[0].textContent.trim();directory.append(a);}
+      const createLink=document.createElement('a');createLink.href='#account-form';createLink.textContent='创建账号';directory.prepend(createLink);
+      let onlineEnabled=false, onlineLoading=false, imageGeneration=0;
+      const imageUrls=new Set();
+      async function loadOnline() {
+        if(onlineLoading)return;onlineLoading=true;
+        try {
+          const users=await request('/api/admin/online');onlineEnabled=true;
+          const target=document.querySelector('#online-users');target.replaceChildren();
+          document.querySelector('#online-count').textContent=`（${users.length}）`;
+          if(!users.length)target.textContent='暂无在线用户';
+          for(const user of users){
+            const row=document.createElement('div');row.className='online-user';
+            const name=colorRating(document.createElement('strong'),user.rating);name.textContent=user.username;
+            const detail=document.createElement('small');detail.textContent=`${user.accountType==='bot'?'BOT · ':''}${user.rooms.length?'房间 '+user.rooms.join('、'):'大厅 / 工作台'}`;
+            row.append(name,detail);target.append(row);
+          }
+        }catch(error){onlineEnabled=false;document.querySelector('#online-users').textContent=error.message;}
+        finally{onlineLoading=false;}
+      }
+      document.querySelector('#refresh-online').onclick=loadOnline;
+      document.querySelector('#admin-key').addEventListener('change',loadOnline);
+      setInterval(()=>{if(onlineEnabled&&!document.hidden)loadOnline();},10000);
+      async function loadImages() {
+        const generation=++imageGeneration;
+        try {
+          const data=await request(`/api/admin/images`);
+          if(generation!==imageGeneration)return;
+          for(const url of imageUrls)URL.revokeObjectURL(url);imageUrls.clear();
+          const target=document.querySelector('#image-gallery');target.replaceChildren();
+          document.querySelector('#image-usage').textContent=`${data.total} 张 · ${(data.bytes/1048576).toFixed(1)} / ${(data.quota/1048576).toFixed(0)} MiB`;
+          if(!data.items.length)target.textContent='图床中暂无图片';
+          for(const item of data.items){
+            const card=document.createElement('article');card.className='image-card';const pick=document.createElement('input');pick.type='checkbox';pick.className='image-pick';pick.value=item.id;card.append(pick);
+            const image=document.createElement('img');image.alt='点击预览加载图片';
+            const info=document.createElement('small');info.textContent=`${item.owner} · ${item.scope}\n${new Date(item.time).toLocaleString()} · ${(item.size/1024).toFixed(0)} KiB`;
+            const preview=document.createElement('button');preview.textContent='预览';
+            preview.onclick=async()=>{
+              preview.disabled=true;
+              try{
+                const data=await request(`/api/admin/images/${item.id}`);
+                if(generation!==imageGeneration)return;
+                const blob=new Blob([Uint8Array.from(atob(data.data),c=>c.charCodeAt(0))],{type:data.type});
+                const url=URL.createObjectURL(blob);imageUrls.add(url);image.src=url;image.alt='图床图片';preview.hidden=true;
+              }catch(error){image.alt=error.message;preview.disabled=false;}
+            };
+            const remove=document.createElement('button');remove.textContent='删除';remove.className='danger-text';
+            remove.onclick=async()=>{
+              if(!confirm('永久删除这张图片？聊天中的对应图片链接将失效。'))return;
+              remove.disabled=true;
+              try{await request(`/api/admin/images/${item.id}`,{method:'DELETE'});await loadImages();}
+              catch(error){result.textContent=error.message;remove.disabled=false;}
+            };
+            const actions=document.createElement('div');actions.className='studio-toolbar';actions.append(preview,remove);
+            card.append(image,info,actions);target.append(card);
+          }
+        }catch(error){result.textContent=error.message;}
+      }
+      document.querySelector('#refresh-images').onclick=loadImages;
+      window.addEventListener('pagehide',()=>{for(const url of imageUrls)URL.revokeObjectURL(url);});
+      async function loadAnnouncements() {
+        try {
+          const items = await request('/api/announcements');
+          const target = document.querySelector('#admin-announcements'); target.replaceChildren();
+          for (const item of items) {
+            const row = document.createElement('div'); row.className = 'account-row';
+            const text = document.createElement('span'); text.className='chat-content'; text.textContent = item.text;
+            const remove = document.createElement('button'); remove.textContent = '删除';
+            remove.onclick = async () => {try {await request(`/api/announcements/${item.id}`,{method:'DELETE'});await loadAnnouncements();}catch(error){result.textContent=error.message;}};
+            const content=document.createElement('div');content.append(messageHeader(item),text);row.append(content,remove); target.append(row);
+          }
+        } catch(error) {result.textContent=error.message;}
+      }
+      document.querySelector('#refresh-announcements').onclick = loadAnnouncements;
+      document.querySelector('#admin-announcement-form').onsubmit = async event => {
+        event.preventDefault(); const input = document.querySelector('#admin-announcement-text');
+        try {await request('/api/announcements',{method:'POST',body:JSON.stringify({text:input.value})});input.value='';await loadAnnouncements();}
+        catch(error){result.textContent=error.message;}
+      };
+      const chatScope=document.querySelector('#admin-chat-scope');
+      const chatEndpoint=()=>chatScope.value?'/api/admin/groups/'+encodeURIComponent(chatScope.value)+'/chat':'/api/admin/chat';
+      chatScope.onchange=loadChat;
+      async function moderateChat(payload) {
+        try {await request(chatScope.value?'/api/groups/'+encodeURIComponent(chatScope.value)+'/chat/action':'/api/admin/chat',{method:'POST',body:JSON.stringify(payload)});await loadChat();}
+        catch(error){result.textContent=error.message;}
+      }
+      async function loadChat() {
+        try {
+          const data=await request(chatEndpoint());const list=document.querySelector('#admin-chat'),mutes=document.querySelector('#chat-mutes');releaseChatFolds(list);list.replaceChildren();mutes.replaceChildren();
+          for(const username of data.muted){const button=document.createElement('button');button.textContent=`解除禁言：${username}`;button.onclick=()=>moderateChat({action:'unmute',username});mutes.append(button);}
+          for(const username of data.banned||[]){const button=document.createElement('button');button.textContent=`解除全站禁言：${username}`;button.onclick=()=>moderateChat({action:'unban',username});mutes.append(button);}
+          for(const item of [...data.messages].reverse()) {
+            const row=document.createElement('div');row.className='account-row';const pick=document.createElement('input');pick.type='checkbox';pick.className='chat-pick';pick.value=item.id;row.append(pick);const text=document.createElement('span');text.className='chat-content';const content=document.createElement('div');content.className='admin-message-content';renderRichChatBody(text,item.text,headers());content.append(messageHeader(item),text);attachChatFold(content,text,`admin:${chatScope.value}:${item.id}`);row.append(content);
+
+            const button=document.createElement('button');button.textContent='删除';button.onclick=()=>moderateChat({action:'delete',ids:[item.id]});row.append(button);
+            const mute=document.createElement('button');mute.textContent='禁言';mute.onclick=()=>moderateChat({action:'mute',username:item.name});row.append(mute);
+            const ban=document.createElement('button');ban.textContent='全站禁言';ban.onclick=()=>moderateChat({action:'ban',username:item.name});row.append(ban);list.append(row);
+          }
+        }catch(error){result.textContent=error.message;}
+      }
+      document.querySelector('#chat-select-all').onclick=()=>document.querySelectorAll('.chat-pick').forEach(x=>x.checked=true);
+      document.querySelector('#chat-delete-selected').onclick=async()=>{const ids=[...document.querySelectorAll('.chat-pick:checked')].map(x=>x.value);if(!ids.length)return;if(!confirm(`直接删除 ${ids.length} 条消息？`))return;await moderateChat({action:'delete',ids});};
+      document.querySelector('#images-select-all').onclick=()=>document.querySelectorAll('.image-pick').forEach(x=>x.checked=true);
+      document.querySelector('#images-delete-selected').onclick=async()=>{const ids=[...document.querySelectorAll('.image-pick:checked')].map(x=>x.value);if(!ids.length)return;if(!confirm(`删除 ${ids.length} 张图片？`))return;try{await request('/api/admin/images',{method:'DELETE',body:JSON.stringify({ids})});await loadImages();}catch(e){result.textContent=e.message;}};
+      document.querySelector('#refresh-chat').onclick=async()=>{await loadGroups();await loadChat();};
+      document.querySelector('#mute-chat-user').onclick=()=>moderateChat({action:'mute',username:document.querySelector('#mute-username').value.trim()});
+      let adminGroups=[];
+      async function loadGroups(){
+        const status=document.querySelector('#group-refresh-status');status.textContent='刷新中…';
+        try{
+          const groups=await request('/api/admin/groups');adminGroups=groups;const selectedScope=chatScope.value;chatScope.replaceChildren(new Option('首页聊天',''),...groups.map(g=>new Option(g.name,g.id)));chatScope.value=selectedScope;const box=document.querySelector('#admin-groups');box.replaceChildren();
+          for(const x of groups){
+            const row=document.createElement('div');row.className='group-admin-row';
+            const head=document.createElement('div');head.className='group-admin-head';
+            const id=document.createElement('code');id.textContent=x.id;
+            const name=document.createElement('input');name.value=x.name;name.className='group-name-input';
+            head.append(id,name);
+            const mk=(label,key)=>{const l=document.createElement('label');const c=document.createElement('input');c.type='checkbox';c.checked=!!x[key];l.append(c,document.createTextNode(label));return [l,c];};
+            const [lc,cc]=mk('暂停聊天','chatPaused'),[lp,cp]=mk('暂停下棋','playPaused'),[li,ci]=mk('暂停图床','imagesPaused');
+            const lim=document.createElement('input');lim.type='number';lim.min='0';lim.max='1000';lim.value=x.dailyRoomLimit??3;lim.style.width='7em';
+            const keep=document.createElement('input');keep.type='checkbox';keep.checked=!!x.keepRoomHistory;const keepLabel=document.createElement('label');keepLabel.className='group-check';keepLabel.append(keep,document.createTextNode('保留历史对局'));
+            const save=document.createElement('button');save.textContent='保存';save.onclick=async()=>{await request('/api/admin/groups/'+encodeURIComponent(x.id),{method:'PATCH',body:JSON.stringify({name:name.value,chatPaused:cc.checked,playPaused:cp.checked,imagesPaused:ci.checked,dailyRoomLimit:Number(lim.value),keepRoomHistory:keep.checked})});await loadGroups();};
+            const del=document.createElement('button');del.textContent='删除';del.disabled=x.id==='default';del.onclick=async()=>{if(confirm('删除该分组？成员会移入默认分组。')){await request('/api/admin/groups/'+encodeURIComponent(x.id),{method:'DELETE'});await loadGroups();}};
+            const options=document.createElement('div');options.className='group-admin-options';
+            const quota=document.createElement('label');quota.className='group-quota';quota.append(document.createTextNode('每日建房'),lim,document.createTextNode('个'));
+            const actions=document.createElement('div');actions.className='group-admin-actions';actions.append(save,del);
+            options.append(lc,lp,li,quota,keepLabel,actions);row.append(head,options);box.append(row);
+          }
+          const members=await request('/api/admin/group-members');const mb=document.querySelector('#admin-group-members');mb.replaceChildren();
+          const toolbar=document.createElement('div');toolbar.className='studio-toolbar';const all=document.createElement('button');all.textContent='全选';const target=document.createElement('select');for(const x of adminGroups)target.add(new Option(x.name,x.id));const batch=document.createElement('button');batch.textContent='批量更改分组';toolbar.append(all,target,batch);mb.append(toolbar);
+          for(const m of members){const row=document.createElement('div');row.className='account-row';const pick=document.createElement('input');pick.type='checkbox';pick.className='group-member-pick';pick.value=m.username;const sel=document.createElement('select');for(const x of adminGroups)sel.add(new Option(x.name,x.id));sel.value=m.groupId;const save=document.createElement('button');save.textContent='更改分组';save.onclick=async()=>{await request('/api/admin/group-members/'+encodeURIComponent(m.username),{method:'PATCH',body:JSON.stringify({groupId:sel.value})});await loadGroups();};row.append(pick,document.createTextNode(m.username+' · '),sel,save);mb.append(row);}
+          all.onclick=()=>mb.querySelectorAll('.group-member-pick').forEach(x=>x.checked=true);batch.onclick=async()=>{const usernames=[...mb.querySelectorAll('.group-member-pick:checked')].map(x=>x.value);if(!usernames.length)return;if(!confirm(`将 ${usernames.length} 个成员移动到“${target.selectedOptions[0]?.textContent||target.value}”？`))return;await request('/api/admin/group-members',{method:'PATCH',body:JSON.stringify({usernames,groupId:target.value})});for(const row of mb.querySelectorAll('.account-row')){const pick=row.querySelector('.group-member-pick');if(pick?.checked){const sel=row.querySelector('select');if(sel)sel.value=target.value;}}await loadGroups();};
+          status.textContent='已刷新';
+        }catch(e){status.textContent='刷新失败：'+e.message;result.textContent=e.message;}
+      }
+      document.querySelector('#refresh-groups').onclick=async()=>{const b=document.querySelector('#refresh-groups');b.disabled=true;try{await loadGroups();}finally{b.disabled=false;}};
+      document.querySelector('#create-group').onclick=async()=>{try{await request('/api/admin/groups',{method:'POST',body:JSON.stringify({id:document.querySelector('#new-group-id').value,name:document.querySelector('#new-group-name').value})});document.querySelector('#new-group-id').value='';document.querySelector('#new-group-name').value='';await loadGroups();}catch(e){result.textContent=e.message;}};
+      document.querySelector('#admin-key').addEventListener('change',loadGroups);
+      loadGroups();
+      async function loadRooms() {
+        const target = document.querySelector('#admin-rooms');
+        try {
+          const rooms = await request('/api/admin/rooms');
+          target.replaceChildren();
+          const total=document.createElement('p');total.textContent=`对局数据总计 ${(rooms.reduce((n,r)=>n+(r.bytes||0),0)/1024).toFixed(1)} KiB`;target.append(total);
+          if (!rooms.length) target.append(document.createTextNode('暂无房间'));
+          for (const room of rooms) {
+            const row = document.createElement('div'); row.className = 'account-row';
+            const text = document.createElement('span');
+            text.textContent = `${room.name || room.code} (${room.code}) · ${room.players}/${room.capacity} 人 · ${{setup:'即将开始',playing:'正在进行',finished:'已经结束'}[room.phase]} · ${room.rated ? 'Rated' : '不计分'} · 对局 ${(room.gameBytes/1024).toFixed(1)} KiB · 聊天 ${(room.chatBytes/1024).toFixed(1)} KiB`;
+            const button = document.createElement('button'); button.textContent = '删除房间';
+            button.onclick = async () => {
+              if (!confirm(`永久删除 ${room.code} 的棋局和聊天？已经结算的 Rating 不回滚。`)) return;
+              try { await request('/api/admin/rooms/' + encodeURIComponent(room.code), { method: 'DELETE' }); await loadRooms(); }
+              catch (error) { result.textContent = error.message; }
+            };
+            const actions=document.createElement('div');actions.className='admin-row-actions';
+            const open=document.createElement('a');open.href='/room/'+room.code;open.textContent='查看';actions.append(open);
+            if(room.phase!=='finished'){const finish=document.createElement('button');finish.textContent='结束比赛';finish.onclick=async()=>{if(!confirm('结束比赛并保留记录？本局不计分。'))return;try{await request('/api/admin/rooms/'+encodeURIComponent(room.code)+'/finish',{method:'POST'});await loadRooms();}catch(e){result.textContent=e.message;}};actions.append(finish);}
+            const clear=document.createElement('button');clear.textContent='删除聊天记录';clear.onclick=async()=>{if(!confirm('删除该房间全部聊天记录，保留棋谱？'))return;try{await request('/api/admin/rooms/'+encodeURIComponent(room.code)+'/chat',{method:'DELETE'});await loadRooms();}catch(e){result.textContent=e.message;}};
+            actions.append(clear,button);row.append(text,actions); target.append(row);
+          }
+        } catch (error) { target.textContent = error.message; }
+      }
+      document.querySelector('#refresh-rooms').onclick = loadRooms;
+      document.querySelector('#admin-key').addEventListener('change', loadRooms);
+      async function request(url, options = {}) {
+        const response = await fetch(url, { ...options, headers: headers(), cache:'no-store' });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || "操作失败");
+        return body;
+      }
+      let accountLoad=0;
+      async function loadAccounts() {
+        const version=++accountLoad;
+        list.textContent = "加载中…";
+        try {
+          const accounts = await request('/api/admin/accounts?details=1');
+          if(version!==accountLoad)return;
+          list.replaceChildren();
+          if (!accounts.length) list.textContent = "暂无账号";
+          for (const account of accounts) {
+            const username = account.username;
+            const row = document.createElement("div");
+            row.className = "account-row";
+            const name = document.createElement("span");
+            name.textContent = `${username} · ${account.admin ? "管理员账号" : account.accountType === "bot" ? "BOT 账号" : "玩家账号"} · ${account.rank} · ${account.rating}（${account.ratedGames} 局，最高 ${account.peakRating}）`;
+            colorRating(name, account.rating);
+            const ratingInput = document.createElement("input");
+            ratingInput.className = "rating-input"; ratingInput.type = "number";
+            ratingInput.min = "-100"; ratingInput.max = "8000"; ratingInput.value = account.rating;
+            const saveRating = document.createElement("button");
+            saveRating.type = "button"; saveRating.className = "icon-button"; saveRating.textContent = "改分";
+            saveRating.onclick = async () => {
+              try {
+                const updated = await request("/api/admin/accounts/" + encodeURIComponent(username) + "/rating", { method: "PATCH", body: JSON.stringify({ rating: Number(ratingInput.value) }) });
+                result.textContent = `${username} 已调整为 ${updated.rating}（${updated.rank}）`;
+                await loadAccounts();
+              } catch (error) { result.textContent = error.message; }
+            };
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "icon-button danger-text";
+            button.textContent = "删除";
+            button.setAttribute("aria-label", "删除账号 " + username);
+            button.onclick = async () => {
+              if (!confirm("确定删除账号「" + username + "」？该账号将退出登录，删除后无法恢复。")) return;
+              button.disabled = true;
+              try {
+                await request("/api/admin/accounts/" + encodeURIComponent(username), { method: "DELETE" });
+                result.textContent = "账号 " + username + " 已删除";
+                await loadAccounts();
+              } catch (error) { result.textContent = error.message; button.disabled = false; }
+            };
+            if (account.accountType === "human") {
+              const adminButton = document.createElement("button");
+              adminButton.type = "button"; adminButton.className = "icon-button";
+              adminButton.textContent = account.admin ? "取消管理" : "设为管理";
+              adminButton.onclick = async () => {
+                try {
+                  const updated = await request("/api/admin/accounts/" + encodeURIComponent(username) + "/admin", { method: "PATCH", body: JSON.stringify({ admin: !account.admin }) });
+                  result.textContent = `${username} ${updated.admin ? "已设为管理员" : "已取消管理员"}`;
+                  await loadAccounts();
+                } catch (error) { result.textContent = error.message; }
+              };
+              row.append(name, ratingInput, saveRating, adminButton, button);
+            } else {
+              row.append(name, ratingInput, saveRating, button);
+            }
+            const block=document.createElement('button');block.className='icon-button';block.textContent=account.blocked?'解封':'封禁';block.onclick=async()=>{try{await request('/api/admin/accounts/'+encodeURIComponent(username)+'/block',{method:'PATCH',body:JSON.stringify({blocked:!account.blocked})});await loadAccounts();}catch(e){result.textContent=e.message;}};row.append(block);
+            const mute=document.createElement('button');mute.className='icon-button';mute.textContent=account.globallyMuted?'解除禁言':'全站禁言';mute.onclick=async()=>{await moderateChat({action:account.globallyMuted?'unban':'ban',username});await loadAccounts();};row.append(mute);
+            const actions=document.createElement('div');actions.className='account-edit-actions';for(const child of [...row.children].slice(1))actions.append(child);row.append(actions);
+            list.append(row);
+          }
+        } catch (error) { list.textContent = error.message; }
+      }
+      async function loadRequests() {
+        const target = document.querySelector("#request-list");
+        target.textContent = "加载中…";
+        try {
+          const items = await request("/api/admin/registrations");
+          target.replaceChildren();
+          if (!items.length) target.textContent = "暂无待审核申请";
+          for (const item of items) {
+            const row = document.createElement("div"); row.className = "account-row";
+            const label = document.createElement("span"); label.textContent = item.username + (item.accountType === "bot" ? " · BOT 申请 · " : " · 玩家申请 · ") + new Date(item.createdAt).toLocaleString(); row.append(label);
+            for (const [action, text] of [["approve", "通过"], ["reject", "拒绝"]]) {
+              const button = document.createElement("button"); button.type = "button"; button.className = "icon-button"; button.textContent = text;
+              button.onclick = async () => {
+                row.querySelectorAll("button").forEach(b => b.disabled = true);
+                try { await request("/api/admin/registrations/" + encodeURIComponent(item.username), { method: "POST", body: JSON.stringify({ action }) }); result.textContent = item.username + "：已" + text; await loadRequests(); await loadAccounts(); }
+                catch (error) { result.textContent = error.message; row.querySelectorAll("button").forEach(b => b.disabled = false); }
+              }; row.append(button);
+            }
+            target.append(row);
+          }
+        } catch (error) { target.textContent = error.message; }
+      }
+      document.querySelector("#refresh-requests").onclick = loadRequests;
+      document.querySelector("#admin-key").addEventListener("change", loadRequests);
+      document.querySelector("#refresh-accounts").onclick = loadAccounts;
+      document.querySelector("#admin-key").addEventListener("change", loadAccounts);
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const button = form.querySelector('button[type="submit"]');
+        button.disabled = true;
+        try {
+          const body = await request("/api/admin/accounts", {
+            method: "POST",
+            body: JSON.stringify({ username: document.querySelector("#username").value, password: document.querySelector("#password").value, accountType: document.querySelector("#account-type").value }),
+          });
+          result.textContent = "账号 " + body.username + " 已创建";
+          document.querySelector("#username").value = "";
+          document.querySelector("#password").value = "";
+          await loadAccounts();
+        } catch (error) { result.textContent = error.message; }
+        finally { button.disabled = false; }
+      });
+    </script>
+  <script type="module" src="/user-colors.js"></script></body>
+</html>

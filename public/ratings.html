@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#101010" />
+    <meta name="description" content="四国军棋 Rating 排名" />
+    <title>Rating 排名 · 四国军棋</title>
+    <link rel="stylesheet" href="/styles.css" />
+  <link rel="icon" type="image/png" href="/favicon.png?v=240"><link rel="apple-touch-icon" href="/favicon.png?v=240"><link rel="stylesheet" href="/cf-layout.css"></head>
+  <body><script type="module" src="/site-shell.js"></script>
+    <main class="ranking-shell">
+      <header class="ranking-header">
+        <div><span class="step-number">公开排名</span><h1>Rating 排名</h1></div>
+        
+      </header>
+      
+      <div class="ranking-table-wrap">
+        <table class="ranking-table">
+          <thead><tr><th>排名</th><th>账号</th><th>军衔</th><th>Rating</th><th>排位局</th><th>最高</th></tr></thead>
+          <tbody id="ranking-body"><tr><td colspan="6" class="ranking-empty">正在加载排名……</td></tr></tbody>
+        </table>
+      </div>
+    </main>
+    
+    <script type="module" src="/ratings.js"></script>
+  <script type="module" src="/user-colors.js"></script></body>
+</html>
