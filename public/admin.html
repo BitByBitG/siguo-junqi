@@ -35,7 +35,7 @@
     <script type="module">
       import "/secure.js";
       import {addSelection,installBatch} from '/admin-batch.js';
-      import {copySourceButton} from '/chat-controls.js';
+      import {copySourceButton,renderMutedUsers} from '/chat-controls.js';
       import {renderRichChatBody,attachChatFold,releaseChatFolds} from "/chat-common.js";
       import {colorRating} from '/rating-colors.js';
       import {avatarImage,messageTime} from '/avatars.js';
@@ -61,7 +61,7 @@
           if(!users.length)target.textContent='暂无在线用户';
           for(const user of users){
             const row=document.createElement('div');row.className='online-user';
-            const name=colorRating(document.createElement('strong'),user.rating);name.textContent=user.username;
+            const name=colorRating(document.createElement('a'),user.rating);name.textContent=user.username;name.href='/profile/'+encodeURIComponent(user.username);
             const detail=document.createElement('small');detail.textContent=`${user.accountType==='bot'?'BOT · ':''}${user.rooms.length?'房间 '+user.rooms.join('、'):'大厅 / 工作台'}`;
             row.append(name,detail);target.append(row);
           }
@@ -137,7 +137,7 @@
       async function loadChat() {
         try {
           const data=await request(chatEndpoint());const list=document.querySelector('#admin-chat'),mutes=document.querySelector('#chat-mutes');releaseChatFolds(list);list.replaceChildren();mutes.replaceChildren();
-          for(const username of data.muted){const button=document.createElement('button');button.textContent=`解除禁言：${username}`;button.onclick=()=>moderateChat({action:'unmute',username});mutes.append(button);}
+          mutes.className='chat-muted-users';renderMutedUsers(mutes,data.muted,username=>moderateChat({action:'unmute',username}));
           for(const item of [...data.messages].reverse()) {
             const row=document.createElement('div');row.className='account-row';const pick=document.createElement('input');pick.type='checkbox';pick.className='chat-pick';pick.value=item.id;row.append(pick);const text=document.createElement('span');text.className='chat-content';const content=document.createElement('div');content.className='admin-message-content';renderRichChatBody(text,item.text,headers());content.append(messageHeader(item),text);attachChatFold(content,text,`admin:${chatScope.value}:${item.id}`);row.append(content);
 
@@ -177,7 +177,7 @@
           }
           const members=await request('/api/admin/group-members');const mb=document.querySelector('#admin-group-members');mb.replaceChildren();
           const toolbar=document.createElement('div');toolbar.className='studio-toolbar';const all=document.createElement('button');all.textContent='全选';const target=document.createElement('select');for(const x of adminGroups)target.add(new Option(x.name,x.id));const batch=document.createElement('button');batch.textContent='批量更改分组';toolbar.append(all,target,batch);mb.append(toolbar);
-          for(const m of members){const row=document.createElement('div');row.className='account-row';const pick=document.createElement('input');pick.type='checkbox';pick.className='group-member-pick';pick.value=m.username;const sel=document.createElement('select');for(const x of adminGroups)sel.add(new Option(x.name,x.id));sel.value=m.groupId;const save=document.createElement('button');save.textContent='更改分组';save.onclick=async()=>{await request('/api/admin/group-members/'+encodeURIComponent(m.username),{method:'PATCH',body:JSON.stringify({groupId:sel.value})});await loadGroups();};row.append(pick,document.createTextNode(m.username+' · '),sel,save);mb.append(row);}
+          for(const m of members){const row=document.createElement('div');row.className='account-row';const pick=document.createElement('input');pick.type='checkbox';pick.className='group-member-pick';pick.value=m.username;const profile=document.createElement('a');profile.href='/profile/'+encodeURIComponent(m.username);profile.textContent=m.username;const sel=document.createElement('select');for(const x of adminGroups)sel.add(new Option(x.name,x.id));sel.value=m.groupId;const save=document.createElement('button');save.textContent='更改分组';save.onclick=async()=>{await request('/api/admin/group-members/'+encodeURIComponent(m.username),{method:'PATCH',body:JSON.stringify({groupId:sel.value})});await loadGroups();};row.append(pick,profile,document.createTextNode(' · '),sel,save);mb.append(row);}
           all.onclick=()=>mb.querySelectorAll('.group-member-pick').forEach(x=>x.checked=true);batch.onclick=async()=>{const usernames=[...mb.querySelectorAll('.group-member-pick:checked')].map(x=>x.value);if(!usernames.length)return;if(!confirm(`将 ${usernames.length} 个成员移动到“${target.selectedOptions[0]?.textContent||target.value}”？`))return;await request('/api/admin/group-members',{method:'PATCH',body:JSON.stringify({usernames,groupId:target.value})});for(const row of mb.querySelectorAll('.account-row')){const pick=row.querySelector('.group-member-pick');if(pick?.checked){const sel=row.querySelector('select');if(sel)sel.value=target.value;}}await loadGroups();};
           status.textContent='已刷新';
         }catch(e){status.textContent='刷新失败：'+e.message;result.textContent=e.message;}
@@ -236,9 +236,7 @@
             const username = account.username;
             const row = document.createElement("div");
             row.className = "account-row";
-            const name = document.createElement("span");
-            name.textContent = `${username} · ${account.admin ? "管理员账号" : account.accountType === "bot" ? "BOT 账号" : "玩家账号"} · ${account.rank} · ${account.rating}（${account.ratedGames} 局，最高 ${account.peakRating}）${account.blocked?' · 已封禁':''}${account.globallyMuted?' · 已全站禁言':''}`;
-            colorRating(name, account.rating);
+            const name = document.createElement("span"),profile=document.createElement('a');profile.href='/profile/'+encodeURIComponent(username);profile.textContent=username;colorRating(profile,account.rating);name.append(profile,document.createTextNode(` · ${account.admin ? "管理员账号" : account.accountType === "bot" ? "BOT 账号" : "玩家账号"} · ${account.rank} · ${account.rating}（${account.ratedGames} 局，最高 ${account.peakRating}）${account.blocked?' · 已封禁':''}${account.globallyMuted?' · 已全站禁言':''}`));
             const ratingInput = document.createElement("input");
             ratingInput.className = "rating-input"; ratingInput.type = "number";
             ratingInput.min = "-100"; ratingInput.max = "8000"; ratingInput.value = account.rating;

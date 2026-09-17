@@ -28,7 +28,7 @@ function render(){
   if(rooms&&destination&&rooms.parentElement!==destination)destination.append(rooms);
   const profile=document.querySelector('#home-profile');
   const prompt=document.querySelector('#contest-login');if(prompt)prompt.hidden=!!auth?.token;
-  if(profile){profile.replaceChildren();if(auth?.token){const name=colorRating(document.createElement('strong'),auth.rating);name.textContent=auth.username;const details=document.createElement('p');details.textContent=auth.accountType==='bot'?'BOT 账号':`${auth.rank} · ${auth.rating}`;profile.append(name,details);}else profile.append(link('登录','/login.html'),document.createTextNode(' / '),link('注册','/register.html'));}
+  if(profile){profile.replaceChildren();if(auth?.token){const name=colorRating(link(auth.username,'/profile/'+encodeURIComponent(auth.username)),auth.rating);const details=document.createElement('p');details.textContent=auth.accountType==='bot'?'BOT 账号':`${auth.rank} · ${auth.rating}`;profile.append(name,details);}else profile.append(link('登录','/login.html'),document.createTextNode(' / '),link('注册','/register.html'));}
 }
 render();window.addEventListener('junqi-profile-refresh',render);window.addEventListener('junqi-page-change',render);window.addEventListener('storage',render);
 let sidebarRevision=0;

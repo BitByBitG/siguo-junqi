@@ -229,6 +229,7 @@ function normalizeAccount(account) {
   if (typeof account.groupId !== 'string' || !groupData.groups[account.groupId]) account.groupId = 'default';
   if (typeof account.roomCreateDay !== 'string') account.roomCreateDay = '';
   if (!Number.isInteger(account.roomCreateCount) || account.roomCreateCount < 0) account.roomCreateCount = 0;
+  if (typeof account.signature !== 'string') account.signature = '';
   return account;
 }
 
@@ -237,7 +238,7 @@ function accountProfile(username) {
   if (!account) return { rating: INITIAL_RATING, ratedGames: 0, peakRating: INITIAL_RATING, ...ratingRank(INITIAL_RATING) };
   normalizeAccount(account);
   const info = ratingRank(account.rating);
-  return { blocked:!!account.blocked, globallyMuted:globalBans.includes(username), avatar: account.avatar?.id || null, accountType: account.type || "human", admin: !!account.admin, rating: account.rating, ratedGames: account.ratedGames, peakRating: account.peakRating, rank: info.rank, rankClass: info.rankClass, groupId:account.groupId||'default', groupName:groupData.groups[account.groupId||'default']?.name||'默认分组' };
+  return { blocked:!!account.blocked, globallyMuted:globalBans.includes(username), avatar: account.avatar?.id || null, signature:account.signature||'', accountType: account.type || "human", admin: !!account.admin, rating: account.rating, ratedGames: account.ratedGames, peakRating: account.peakRating, rank: info.rank, rankClass: info.rankClass, groupId:account.groupId||'default', groupName:groupData.groups[account.groupId||'default']?.name||'默认分组' };
 }
 
 function loadAccounts() {
@@ -497,7 +498,7 @@ app.post('/api/groups/:id/chat', async (req,res)=>{
   group.chat.push({id:crypto.randomUUID(),name:user.username,admin:isSuperAdmin(user.username),text,time:Date.now()});group.chat=group.chat.slice(-100);await saveLobbyModeration.flush();res.json({ok:true});
 });
 
-app.post('/api/groups/:id/chat/action', async (req,res)=>{
+app.post(['/api/groups/:id/chat/action','/api/admin/groups/:id/chat/action'], async (req,res)=>{
   const user=authorizeRequest(req);if(!user?.username&&!adminKeyMatches(req))return res.status(401).json({error:'请先登录'});
   const id=cleanGroupId(req.params.id),group=groupData.groups[id];if(!group)return res.status(404).json({error:'分组不存在'});
   if(user?.username)normalizeAccount(accounts[user.username]);const admin=adminKeyMatches(req)||isSuperAdmin(user?.username);
@@ -983,7 +984,7 @@ function serializeRoom(room, viewer) {
       type: (botDebug || adminReveal || (!spectator && (revealAll || piece.owner === viewer?.seat || piece.revealed))) ? piece.type : null,
       revealed: piece.revealed,
     })),
-    spectators: [...room.spectators.values()].map((member) => ({ name: member.name, ...accountProfile(member.username || member.name), isHost: member.name === room.hostName })),
+    spectators: [...room.spectators.entries()].map(([memberId,member]) => ({ memberId,name: member.name, ...accountProfile(member.username || member.name), isHost: member.name === room.hostName })),
     isHost: viewer?.name === room.hostName,
     isRoomManager: (viewer?.name === room.hostName) || viewerIsAdmin,
     botAccounts: (viewer?.name === room.hostName || viewerIsAdmin) ? botAPI.directory() : [],
@@ -1327,7 +1328,6 @@ function applyMove(room, player, from, to) {
       defender.position = null;
       attacker.position = to;
       message = `${SEAT_NAMES[attacker.owner]}进攻${SEAT_NAMES[defender.owner]}，守方棋子被消灭`;
-      if (defender.type === "flag") eliminate(room, defender.owner, "军旗被夺，退出对局");
     } else if (outcome === "defender") {
       revealFlagWhenCommanderDies(room, attacker);
       attacker.position = null;
@@ -1339,6 +1339,7 @@ function applyMove(room, player, from, to) {
       defender.position = null;
       message = `${SEAT_NAMES[attacker.owner]}与${SEAT_NAMES[defender.owner]}交战，双方棋子同时阵亡`;
     }
+    if (defender?.type === "flag" && !defender.position) eliminate(room, defender.owner, "军旗被夺，退出对局");
     const attackerName = PIECE_INFO[attacker.type].name;
     const defenderName = defender ? PIECE_INFO[defender.type].name : null;
     addPrivateLog(room, attacker.owner, defender
@@ -1606,17 +1607,17 @@ io.on("connection", (socket) => {
     emitRoom(room);
   });
 
-  socket.on("kick-member", ({ name } = {}) => {
+  socket.on("kick-member", ({ name,seat,memberId } = {}) => {
     const room = rooms.get(socket.data.roomCode);
     if (!isRoomManager(room, socket)) return replyError(socket, "只有房主或管理员可以踢人");
     name = typeof name === "string" ? name : "";
     if (!name || name === socket.data.username) return replyError(socket, "不能踢出自己");
     if (isSuperAdmin(name)) return replyError(socket, "不能对同级管理员操作");
-    const player = room.players.find((item) => item.name === name);
+    const player = seat ? room.players.find((item) => item.seat===seat&&item.name===name) : room.players.find((item) => item.name === name);
     if(room.phase==='finished')return replyError(socket,'已结束比赛保留参赛名单');
     if(room.rated && room.phase==='playing' && player && isSuperAdmin(socket.data.username))return replyError(socket,'请先结束 Rated 比赛，再管理房间');
     if (room.rated && room.phase === "playing" && player && !player.eliminated && !isSuperAdmin(socket.data.username)) return replyError(socket, "排位对局开始后不能踢出参战玩家");
-    const spectator = [...room.spectators.entries()].find(([, item]) => item.name === name);
+    const spectator = [...room.spectators.entries()].find(([id, item]) => (!memberId||id===memberId)&&item.name === name);
     const targetId = player?.socketId || spectator?.[0];
     const target = targetId && io.sockets.sockets.get(targetId);
     if (!player && !target) return replyError(socket, "没有找到这个人");

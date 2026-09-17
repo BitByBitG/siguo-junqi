@@ -629,3 +629,4 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .brand-icon { width:42px; height:42px; object-fit:contain; border-radius:6px; }
 .admin-shell .danger-text { color:#df8f8f; }
 @media(max-width:650px) { .admin-shell { border-radius:8px; } .account-row > span { flex-basis:100%; } }
+.signature-snippet{max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted);font-size:12px}.profile-signature{min-height:2em;padding:12px;border:1px solid var(--line);background:#2d333b}.muted-user{display:inline-flex;align-items:center;gap:4px;padding:2px 4px;border:1px solid var(--line);border-radius:4px}

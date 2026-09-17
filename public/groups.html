@@ -13,6 +13,7 @@
 <script type="module">
 import {secureSocket} from '/secure.js';
 import {copySourceButton,renderMutedUsers} from '/chat-controls.js';
+import '/user-colors.js';
 import {renderRichChatBody,attachChatFold,releaseChatFolds} from '/chat-common.js';
 import {emojiGroups,emojis} from '/emojis.js';
 import {attachImages,composeImages,clearImages} from '/chat-images.js';
@@ -77,7 +78,7 @@ function checkMentions(g){
  }
 }
 
-async function action(payload){const r=await fetch('/api/groups/'+encodeURIComponent(current)+'/chat/action',{method:'POST',headers:headers(),body:JSON.stringify(payload),cache:'no-store'});const b=await r.json();if(!r.ok)throw Error(b.error);await load(true);}
+async function action(payload,groupId=current){const adminAction=data?.admin&&['mute','unmute','delete'].includes(payload.action);const r=await fetch((adminAction?'/api/admin/groups/':'/api/groups/')+encodeURIComponent(groupId)+'/chat/action',{method:'POST',headers:headers(),body:JSON.stringify(payload),cache:'no-store'});const b=await r.json();if(!r.ok)throw Error(b.error);await load(true);}
 function render(){
  if(!data)return;const g=data.groups.find(x=>x.id===current)||data.groups[0];if(!g)return;current=g.id;name.textContent=g.name;status.textContent=`当前分组：${g.name}`;
  flags.textContent=[g.chatPaused?'聊天已暂停':'聊天正常',g.playPaused?'下棋已暂停':'下棋正常',g.imagesPaused?'图床已暂停':'图床正常'].join(' · ');
@@ -92,9 +93,9 @@ function render(){
    if(localStorage.getItem('junqi-chat-avatars')!=='0'){const al=document.createElement('a');al.href='/profile/'+encodeURIComponent(m.name);al.className='avatar-profile-link';al.append(avatarImage(m.name,m.avatar));meta.append(al);}
    const who=document.createElement('a');who.href='/profile/'+encodeURIComponent(m.name);who.textContent=m.name;colorRating(who,m.rating??1500);who.dataset.username=m.name;meta.append(who);const tm=messageTime(m.time);if(tm)meta.append(tm);
    meta.append(copySourceButton(m.text));
-   if(!m.recalled&&m.name===auth?.username&&Date.now()-m.time<=300000){const b=document.createElement('button');b.className='chat-recall';b.textContent='撤回';b.onclick=()=>action({action:'recall',messageId:m.id}).catch(e=>alert(e.message));meta.append(b);}
-   if(data.admin&&!m.recalled){const del=document.createElement('button');del.className='chat-recall';del.textContent='删除';del.onclick=()=>action({action:'delete',messageId:m.id}).catch(e=>alert(e.message));meta.append(del);
-     if(m.name!==auth?.username){const mu=document.createElement('button');mu.className='chat-recall';mu.textContent=(g.muted||[]).includes(m.name)?'解除禁言':'禁言';mu.onclick=()=>action({action:(g.muted||[]).includes(m.name)?'unmute':'mute',username:m.name}).catch(e=>alert(e.message));meta.append(mu);}}
+   if(!m.recalled&&m.name===auth?.username&&Date.now()-m.time<=300000){const b=document.createElement('button');b.className='chat-recall';b.textContent='撤回';b.onclick=()=>action({action:'recall',messageId:m.id},g.id).catch(e=>alert(e.message));meta.append(b);}
+   if(data.admin&&!m.recalled){const del=document.createElement('button');del.className='chat-recall';del.textContent='删除';del.onclick=()=>action({action:'delete',messageId:m.id},g.id).catch(e=>alert(e.message));meta.append(del);
+     if(m.name!==auth?.username){const mu=document.createElement('button');mu.className='chat-recall';mu.textContent=(g.muted||[]).includes(m.name)?'解除禁言':'禁言';mu.onclick=()=>action({action:(g.muted||[]).includes(m.name)?'unmute':'mute',username:m.name},g.id).catch(e=>alert(e.message));meta.append(mu);}}
    let body,toggle;
    if(previous&&previous._messageText===m.text){body=previous.querySelector('.chat-content');toggle=previous.querySelector('.message-toggle');row.append(meta,body,toggle);}
    else{body=document.createElement('div');body.className='chat-content';renderRichChatBody(body,m.text,auth?.token);row.append(meta,body);attachChatFold(row,body,`group:${current}:${m.id}`);}
@@ -108,8 +109,8 @@ function render(){
  }
  list.scrollTop=atBottom?list.scrollHeight:oldTop;
  form.hidden=g.chatPaused&&!data.admin;input.disabled=form.hidden;
- members.replaceChildren();for(const m of g.members||[]){const row=document.createElement('div');row.className='group-member-card';const al=document.createElement('a');al.href='/profile/'+encodeURIComponent(m.username);al.className='avatar-profile-link';al.append(avatarImage(m.username,m.avatar));row.append(al);const info=document.createElement('span');info.className='group-member-info';const n=document.createElement('a');n.href='/profile/'+encodeURIComponent(m.username);n.textContent=m.username;colorRating(n,m.rating??1500);n.dataset.username=m.username;const detail=document.createElement('small');detail.textContent=`${m.rating??1500}${m.rank?' · '+m.rank:''}`;info.append(n,detail);row.append(info);members.append(row);}
- renderMutedUsers(muted,data.admin?(g.muted||[]):[],username=>action({action:'unmute',username}).catch(e=>alert(e.message)));
+ members.replaceChildren();for(const m of g.members||[]){const row=document.createElement('div');row.className='group-member-card';const al=document.createElement('a');al.href='/profile/'+encodeURIComponent(m.username);al.className='avatar-profile-link';al.append(avatarImage(m.username,m.avatar));row.append(al);const info=document.createElement('span');info.className='group-member-info';const n=document.createElement('a');n.href='/profile/'+encodeURIComponent(m.username);n.textContent=m.username;colorRating(n,m.rating??1500);n.dataset.username=m.username;const detail=document.createElement('small');detail.textContent=`${m.rating??1500}${m.rank?' · '+m.rank:''}`;info.append(n,detail);row.append(info);if(data.admin&&m.username!==auth?.username){const button=document.createElement('button');button.type='button';button.className='chat-recall';const mutedNow=(g.muted||[]).includes(m.username);button.textContent=mutedNow?'解除禁言':'禁言';button.onclick=async()=>{button.disabled=true;try{await action({action:mutedNow?'unmute':'mute',username:m.username},g.id);}catch(e){alert(e.message);}finally{button.disabled=false;}};row.append(button);}members.append(row);}
+ renderMutedUsers(muted,data.admin?(g.muted||[]):[],username=>action({action:'unmute',username},g.id).catch(e=>alert(e.message)));
 }
 async function load(force=false){if(loading&&!force)return;loading=true;try{const r=await fetch('/api/groups',{headers:headers(),cache:'no-store'});const b=await r.json();if(!r.ok)throw Error(b.error);data=b;
  if(data.admin){select.hidden=false;const keep=current||data.current||data.groups[0]?.id;select.replaceChildren(...data.groups.map(g=>new Option(g.name,g.id)));select.value=data.groups.some(g=>g.id===keep)?keep:(data.groups[0]?.id||'');current=select.value;select.onchange=()=>{current=select.value;render();};}else current=data.current;render();

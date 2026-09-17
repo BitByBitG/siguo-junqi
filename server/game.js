@@ -356,8 +356,8 @@ export function hasLegalMove(room, seat) {
 
 export function resolveBattle(attacker, defender) {
   if (!defender) return "move";
-  if (defender.type === "flag") return "attacker";
   if (attacker.type === "bomb" || defender.type === "bomb") return "both";
+  if (defender.type === "flag") return "attacker";
   if (defender.type === "mine") return attacker.type === "engineer" ? "attacker" : "defender";
   const a = PIECE_INFO[attacker.type].rank;
   const d = PIECE_INFO[defender.type].rank;

@@ -1,6 +1,7 @@
 import {colorRating} from './rating-colors.js';
 import "/secure.js";
 const rankingBody = document.querySelector("#ranking-body");
+const signatureHeading=document.createElement('th');signatureHeading.textContent='个性签名';document.querySelector('.ranking-table thead tr').children[2].before(signatureHeading);
 
 function textCell(value, className = "") {
   const cell = document.createElement("td");
@@ -22,7 +23,7 @@ fetch("/api/ratings"+(botRanking?'?type=bot':''))
     if (!accounts.length) {
       const row = document.createElement("tr");
       const cell = textCell("暂无账号", "ranking-empty");
-      cell.colSpan = 6;
+      cell.colSpan = 7;
       row.append(cell);
       rankingBody.append(row);
       return;
@@ -32,6 +33,7 @@ fetch("/api/ratings"+(botRanking?'?type=bot':''))
       row.append(
         textCell(account.position, "ranking-position"),
         colorRating(textCell(account.username, "ranking-name"), account.rating),
+        textCell((account.signature||'').replace(/[#*_`$<>\[\]]/g,'').replace(/\s+/g,' ').slice(0,48), "signature-snippet"),
         colorRating(textCell(account.rank, "rank-badge"), account.rating),
         colorRating(textCell(account.rating, "ranking-rating"), account.rating),
         textCell(account.ratedGames),
@@ -45,7 +47,7 @@ fetch("/api/ratings"+(botRanking?'?type=bot':''))
     rankingBody.replaceChildren();
     const row = document.createElement("tr");
     const cell = textCell(error.message, "ranking-empty");
-    cell.colSpan = 6;
+    cell.colSpan = 7;
     row.append(cell);
     rankingBody.append(row);
   });

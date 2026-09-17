@@ -24,6 +24,12 @@ export function installProfiles(app,{accounts,authorize,accountProfile,saveAccou
       history:account.ratingHistory||[], contests:[...rooms.values()].filter(r=>r.phase==='finished'&&(r.ratedParticipants||r.players).some(p=>(p.username||p.name)===username))
         .map(r=>({code:r.code,name:r.name||r.code,time:r.finishedAt,rated:r.rated&&!r.aborted&&!r.drawn,winner:r.winner})).sort((a,b)=>b.time-a.time)});
   });
+  app.patch('/api/profile/signature',async(req,res)=>{
+    const username=authorize(req)?.username;if(!username)return res.status(401).json({error:'请先登录'});
+    const signature=String(req.body?.signature??'').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g,'').trim();
+    if(Buffer.byteLength(signature)>1024)return res.status(400).json({error:'个性签名不能超过 1 KiB'});
+    accounts[username].signature=signature;await saveAccounts.flush();res.json({ok:true,signature});
+  });
   app.get('/api/avatar/:username',(req,res)=>{
     const avatar=accounts[req.params.username]?.avatar;
     if(!avatar||!/^[-a-f0-9]{36}$/.test(avatar.id))return res.status(404).json({error:'尚未设置头像'});

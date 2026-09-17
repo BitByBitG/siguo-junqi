@@ -590,10 +590,11 @@ function playerStatus(player) {
   return state.turn === player.seat ? "正在行动" : "等待行动";
 }
 
-function kickButton(name) {
+function kickButton(target) {
+  const name=target.name;
   const button = document.createElement("button");
   button.className = "kick-button"; button.type = "button"; button.textContent = "踢出";
-  button.addEventListener("click", () => { if (confirm(`确定踢出 ${name} 吗？`)) socket.emit("kick-member", { name }); });
+  button.addEventListener("click", () => { if (confirm(`确定踢出 ${name} 吗？`)) socket.emit("kick-member", { name, seat:target.seat || null, memberId:target.memberId || null }); });
   return button;
 }
 
@@ -618,9 +619,11 @@ function renderPlayers() {
     const rating = player.empty ? "" : `<span class="rank-badge cf-rated" data-cf="${player.rankClass}">${player.isBot?'BOT · ':''}${escapeHtml(player.rank)} · ${player.rating}</span>`;
     const change = state.ratingChanges?.[player.seat];
     const delta = change ? `<span class="rating-delta ${change.delta >= 0 ? "up" : "down"}">${change.delta >= 0 ? "+" : ""}${change.delta}</span>` : "";
-    card.innerHTML = `<div class="seat-badge">${seatShort[player.seat]}</div><div class="player-info"><div class="player-name">${player.empty ? "空座" : escapeHtml(player.name)}${me}</div><div class="player-status">${boardMeta?.seatNames[player.seat] || player.seat}${host}</div>${rating}</div><div class="player-state">${playerStatus(player)}${delta}</div>`;
+    const signature=player.empty?'':(player.signature||'').replace(/[#*_`$<>\[\]]/g,'').replace(/\s+/g,' ').slice(0,48);
+    card.innerHTML = `<div class="seat-badge">${seatShort[player.seat]}</div><div class="player-info"><div class="player-name">${player.empty ? "空座" : escapeHtml(player.name)}${me}</div><div class="player-status">${boardMeta?.seatNames[player.seat] || player.seat}${host}</div>${rating}${signature?`<div class="signature-snippet" title="${escapeHtml(player.signature||'')}">${escapeHtml(signature)}</div>`:''}</div><div class="player-state">${playerStatus(player)}${delta}</div>`;
+    if(!player.empty){const old=card.querySelector('.player-name'),link=document.createElement('a');link.href='/profile/'+encodeURIComponent(player.name);link.textContent=player.name;colorRating(link,player.rating??1500);old.replaceChildren(link,document.createTextNode(me));}
     if (!player.empty) colorRating(card.querySelector('.player-name'), player.rating ?? 1500);
-    if (canModerateKick(player) && !player.empty) card.append(kickButton(player.name));
+    if (canModerateKick(player) && !player.empty) card.append(kickButton(player));
     list.append(card);
   }
   const watchers = $("#spectators-list"); watchers.replaceChildren();
@@ -628,8 +631,8 @@ function renderPlayers() {
     const title = document.createElement("strong"); title.textContent = "离座 / 观战"; watchers.append(title);
     for (const member of state.spectators) {
       const row = document.createElement("div"); row.className = "spectator-row";
-      const label = document.createElement("span"); label.textContent = `${member.name}${member.isHost ? " · 房主" : member.name === state.viewerName ? " · 你" : ""} · ${member.rank} ${member.rating}`; colorRating(label, member.rating); row.append(label);
-      if (canModerateKick(member)) row.append(kickButton(member.name));
+      const label = document.createElement("span"),link=document.createElement('a');link.href='/profile/'+encodeURIComponent(member.name);link.textContent=member.name;colorRating(link,member.rating);label.append(link,document.createTextNode(`${member.isHost ? " · 房主" : member.name === state.viewerName ? " · 你" : ""} · ${member.rank} ${member.rating}`));row.append(label);
+      if (canModerateKick(member)) row.append(kickButton(member));
       watchers.append(row);
     }
   }
@@ -909,8 +912,7 @@ function renderChat(messages = state?.chat || [], list = $('#chat-list')) {
   if(list.id==='chat-list') {
     $('#room-muted-users')?.remove();
     if(state?.isHost || state?.viewerIsAdmin) {
-      const panel=document.createElement('div');panel.id='room-muted-users';
-      for(const username of state.chatMuted||[]) {const button=document.createElement('button');button.type='button';button.textContent=`解除禁言：${username}`;button.onclick=()=>socket.emit('chat-moderate',{action:'unmute',username});panel.append(button);}
+      const panel=document.createElement('div');panel.id='room-muted-users';panel.className='chat-muted-users';renderMutedUsers(panel,state.chatMuted||[],username=>socket.emit('chat-moderate',{action:'unmute',username}));
       list.after(panel);
     }
   }

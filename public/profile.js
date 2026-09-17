@@ -1,6 +1,8 @@
 import '/secure.js';
 import {colorRating} from './rating-colors.js';
 import {avatarImage} from './avatars.js';
+import {renderRichChatBody} from './chat-common.js';
+for(const src of ['/vendor/marked/marked.umd.js','/vendor/dompurify/purify.min.js','/vendor/katex/katex.min.js','/vendor/katex/contrib/auto-render.min.js'])if(!document.querySelector(`script[src="${src}"]`))await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=src;s.onload=resolve;s.onerror=reject;document.head.append(s);});
 const $=s=>document.querySelector(s);let username=decodeURIComponent(location.pathname.split('/').at(-1));
 const node=(tag,text)=>{const el=document.createElement(tag);if(text!==undefined)el.textContent=text;return el;};
 const link=(text,href)=>{const el=node('a',text);el.href=href;return el;};
@@ -26,6 +28,7 @@ try{
   const response=await fetch('/api/profile/'+encodeURIComponent(username));const user=await response.json();if(!response.ok)throw Error(user.error);username=user.username;
   document.title=username+' · 四国军棋';$('#profile-name').textContent=username;colorRating($('#profile-name'),user.rating);
   $('#profile-rank').textContent=user.rank;colorRating($('#profile-rank'),user.rating);
+  const signatureSection=document.createElement('section'),signatureTitle=node('h2','个性签名'),signature=node('div');signature.className='profile-signature';signatureSection.append(signatureTitle,signature);$('#profile-info').after(signatureSection);renderRichChatBody(signature,user.signature||'');
   for(const [key,value]of [['类型',user.accountType==='bot'?'BOT':'玩家'],['Rating',user.rating],['最高 Rating',user.peakRating],['计分场次',user.ratedGames],...(user.createdAt?[['注册时间',date(user.createdAt)]]:[])])$('#profile-details').append(node('dt',key),node('dd',value));
   let auth;try{auth=JSON.parse(localStorage.getItem('junqi-auth'));}catch{}$('#own-settings').hidden=auth?.username!==username;
   chart(user.history,user.rating);if(!user.history.length)$('#chart-empty').textContent='暂无记录';

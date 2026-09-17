@@ -5,9 +5,9 @@ import vm from 'node:vm';
 const source=fs.readFileSync(new URL('../server/server.js',import.meta.url),'utf8');
 function fixture(){
  const routes={},groups={one:{chat:[{id:'a',text:'hello',name:'alice'},{id:'b',text:'bye',name:'alice'}],muted:[]},two:{chat:[{id:'a',text:'private'}],muted:[]}};
- const context={app:{get:(p,f)=>routes[p]=f,post:(p,f)=>routes[p]=f},authorizeRequest:r=>r.user,adminKeyMatches:r=>r.key==='secret',isSuperAdmin:n=>n==='root',cleanGroupId:x=>x,groupData:{groups},accountProfile:()=>({}),accounts:{alice:{groupId:'one'},root:{groupId:'one'},bob:{groupId:'two'}},normalizeAccount:()=>{},canonicalUsername:x=>x,globalBans:[],saveLobbyModeration:{flush:async()=>{}},EMOJIS:['☺'],crypto:{},Date,Set};
+ const context={app:{get:(p,f)=>routes[p]=f,post:(p,f)=>{for(const route of Array.isArray(p)?p:[p])routes[route]=f;}},authorizeRequest:r=>r.user,adminKeyMatches:r=>r.key==='secret',isSuperAdmin:n=>n==='root',cleanGroupId:x=>x,groupData:{groups},accountProfile:()=>({}),accounts:{alice:{groupId:'one'},root:{groupId:'one'},bob:{groupId:'two'}},normalizeAccount:()=>{},canonicalUsername:x=>x,globalBans:[],saveLobbyModeration:{flush:async()=>{}},EMOJIS:['☺'],crypto:{},Date,Set};
  vm.runInNewContext(source.slice(source.indexOf("app.get('/api/admin/groups/:id/chat'"),source.indexOf("app.get('/api/groups',")),context);
- vm.runInNewContext(source.slice(source.indexOf("app.post('/api/groups/:id/chat/action'"),source.indexOf("app.post('/api/admin/groups',")),context);
+ vm.runInNewContext(source.slice(source.indexOf("app.post(['/api/groups/:id/chat/action'"),source.indexOf("app.post('/api/admin/groups',")),context);
  const call=async(path,req)=>{const res={code:200,status(n){this.code=n;return this},set(){return this},json(x){this.body=x;return this}};await routes[path]({params:{id:'one'},body:{},...req},res);return res;};return{call,groups};
 }
 test('group moderation accepts admin key, rejects unrelated users, scopes bulk deletion and mute',async()=>{
@@ -20,6 +20,15 @@ test('group moderation accepts admin key, rejects unrelated users, scopes bulk d
  await call(post,{key:'secret',body:{action:'mute',username:'alice'}});assert.equal(groups.one.muted[0],'alice');
  await call(post,{key:'secret',body:{action:'unmute',username:'alice'}});assert.equal(groups.one.muted.length,0);
  assert.equal((await call(post,{key:'secret',body:{action:'recall',messageId:'a'}})).code,403);
+});
+test('admin account outside target group can mute and unmute without an admin key',async()=>{
+ const {call,groups}=fixture();
+ for(const route of ['/api/groups/:id/chat/action','/api/admin/groups/:id/chat/action']){
+  const req={user:{username:'root'},params:{id:'two'},body:{action:'mute',username:'bob'}};
+  assert.equal((await call(route,req)).code,200);assert.deepEqual(groups.two.muted,['bob']);assert.deepEqual(groups.one.muted,[]);
+  assert.equal((await call(route,{...req,body:{action:'unmute',username:'bob'}})).code,200);assert.deepEqual(groups.two.muted,[]);
+ }
+ assert.equal((await call('/api/groups/:id/chat/action',{user:{username:'alice'},params:{id:'two'},body:{action:'mute',username:'bob'}})).code,403);
 });
 test('shared ten-line folding retains expansion and measures long messages',()=>{
  const common=fs.readFileSync(new URL('../public/chat-common.js',import.meta.url),'utf8');
