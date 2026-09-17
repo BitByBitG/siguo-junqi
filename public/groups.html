@@ -3,16 +3,16 @@
 <title>分组 · 四国军棋</title><link rel="icon" type="image/png" href="/favicon.png?v=240"><link rel="apple-touch-icon" href="/favicon.png?v=240"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/cf-layout.css">
 <link rel="stylesheet" href="/vendor/katex/katex.min.css"></head>
 <body><script type="module" src="/site-shell.js"></script>
-<main class="admin-shell group-page"><header><h1>分组聊天室</h1><p id="group-status">登录后查看所属分组。</p></header>
-<section class="chat-panel"><div class="panel-heading"><h2 id="group-name">分组</h2><select id="group-select" hidden></select><button id="group-expand" type="button">放大聊天</button></div>
-<div id="group-flags" class="group-flags"></div><div id="group-chat" class="chat-list"></div>
+<main class="group-page home-main"><header><h1>分组聊天室</h1><p id="group-status">登录后查看所属分组。</p><select id="group-select" hidden></select><div id="group-flags" class="group-flags"></div></header>
+<section class="chat-panel"><div class="panel-heading"><h2 id="group-name">分组</h2><button id="group-expand" class="icon-button" type="button">放大聊天</button><button id="group-mentions" class="icon-button" type="button">@ 提醒：关</button></div>
+<div id="group-chat" class="chat-list"></div><div id="group-muted" class="chat-muted-users"></div>
 <form id="group-form" class="chat-form"><textarea id="group-input" maxlength="8000" rows="3" placeholder="组内聊天，支持 Markdown、$LaTeX$、图片粘贴，Ctrl+Enter 发送"></textarea><button type="submit">发送</button></form>
-<div id="group-muted" class="group-muted"></div>
-<h3>组内成员</h3><div id="group-members" class="group-member-list"></div></section></main>
+</section><section><h3>组内成员</h3><div id="group-members" class="group-member-list"></div></section></main>
 <script src="/vendor/marked/marked.umd.js"></script><script src="/vendor/dompurify/purify.min.js"></script>
 <script src="/vendor/katex/katex.min.js"></script><script src="/vendor/katex/contrib/auto-render.min.js"></script><script src="/socket.io/socket.io.js"></script>
 <script type="module">
 import {secureSocket} from '/secure.js';
+import {copySourceButton,renderMutedUsers} from '/chat-controls.js';
 import {renderRichChatBody,attachChatFold,releaseChatFolds} from '/chat-common.js';
 import {emojiGroups,emojis} from '/emojis.js';
 import {attachImages,composeImages,clearImages} from '/chat-images.js';
@@ -53,14 +53,35 @@ socket.on('connect',()=>{if(auth?.token)socket.emit('lobby-auth',{authToken:auth
 const $=q=>document.querySelector(q),status=$('#group-status'),name=$('#group-name'),flags=$('#group-flags'),list=$('#group-chat'),form=$('#group-form'),input=$('#group-input'),select=$('#group-select'),members=$('#group-members'),muted=$('#group-muted');
 let current=null,data=null,loading=false;const headers=()=>({'content-type':'application/json',Authorization:`Bearer ${auth?.token||''}`});
 attachImages(input);
-$('#group-expand').onclick=()=>{const panel=form.closest('.chat-panel');const expanded=panel.classList.toggle('chat-expanded');$('#group-expand').textContent=expanded?'退出放大':'放大聊天';};
+$('#group-expand').onclick=()=>{const panel=form.closest('.chat-panel');const expanded=panel.classList.toggle('chat-expanded');$('#group-expand').textContent=expanded?'恢复大小':'放大聊天';};
 const messageRows=new Map();let renderedGroup=null;
+const mentionButton=$('#group-mentions'),mentionSeen=new Map();
+const mentionEnabled=()=>localStorage.getItem('junqi-mention-notifications')==='1';
+function renderMentionButton(){mentionButton.textContent=`@ 提醒：${mentionEnabled()?'开':'关'}`;mentionButton.setAttribute('aria-pressed',String(mentionEnabled()));}
+renderMentionButton();
+mentionButton.onclick=async()=>{
+ if(!mentionEnabled()){
+  if(!window.isSecureContext||!('Notification'in window)){alert('浏览器通知需要 HTTPS 或 localhost');return;}
+  if(await Notification.requestPermission()!=='granted'){alert('请允许浏览器通知');return;}
+ }
+ localStorage.setItem('junqi-mention-notifications',mentionEnabled()?'0':'1');renderMentionButton();
+};
+function checkMentions(g){
+ const seen=mentionSeen.get(g.id);mentionSeen.set(g.id,new Set(g.chat.map(m=>m.id)));
+ if(!seen||!mentionEnabled()||!('Notification'in window)||Notification.permission!=='granted')return;
+ for(const m of g.chat){
+  if(seen.has(m.id)||m.recalled||m.name===auth?.username)continue;
+  const names=[...m.text.matchAll(/(?:^|[^A-Za-z0-9_\u4e00-\u9fff@])@([A-Za-z0-9_\u4e00-\u9fff]+)/g)].map(x=>x[1].toLowerCase());
+  if(!names.includes(auth?.username?.toLowerCase()))continue;
+  try{const n=new Notification('四国军棋：有人 @ 你',{body:`${m.name}：${m.text}`,tag:`junqi-mention-group-${g.id}`});n.onclick=()=>{window.focus();input.focus();n.close();};}catch{}
+ }
+}
 
 async function action(payload){const r=await fetch('/api/groups/'+encodeURIComponent(current)+'/chat/action',{method:'POST',headers:headers(),body:JSON.stringify(payload),cache:'no-store'});const b=await r.json();if(!r.ok)throw Error(b.error);await load(true);}
 function render(){
  if(!data)return;const g=data.groups.find(x=>x.id===current)||data.groups[0];if(!g)return;current=g.id;name.textContent=g.name;status.textContent=`当前分组：${g.name}`;
  flags.textContent=[g.chatPaused?'聊天已暂停':'聊天正常',g.playPaused?'下棋已暂停':'下棋正常',g.imagesPaused?'图床已暂停':'图床正常'].join(' · ');
- const atBottom=list.scrollHeight-list.clientHeight-list.scrollTop<30,oldTop=list.scrollTop;
+ checkMentions(g);const atBottom=list.scrollHeight-list.clientHeight-list.scrollTop<30,oldTop=list.scrollTop;
  if(renderedGroup!==current){releaseChatFolds(list);list.replaceChildren();messageRows.clear();renderedGroup=current;}
  const ids=new Set(g.chat.map(m=>m.id));for(const [id,row]of messageRows)if(!ids.has(id)){releaseChatFolds(row);row.remove();messageRows.delete(id);}
 
@@ -70,6 +91,7 @@ function render(){
    const row=document.createElement('div');row.className='chat-item';const meta=document.createElement('div');meta.className='chat-meta';
    if(localStorage.getItem('junqi-chat-avatars')!=='0'){const al=document.createElement('a');al.href='/profile/'+encodeURIComponent(m.name);al.className='avatar-profile-link';al.append(avatarImage(m.name,m.avatar));meta.append(al);}
    const who=document.createElement('a');who.href='/profile/'+encodeURIComponent(m.name);who.textContent=m.name;colorRating(who,m.rating??1500);who.dataset.username=m.name;meta.append(who);const tm=messageTime(m.time);if(tm)meta.append(tm);
+   meta.append(copySourceButton(m.text));
    if(!m.recalled&&m.name===auth?.username&&Date.now()-m.time<=300000){const b=document.createElement('button');b.className='chat-recall';b.textContent='撤回';b.onclick=()=>action({action:'recall',messageId:m.id}).catch(e=>alert(e.message));meta.append(b);}
    if(data.admin&&!m.recalled){const del=document.createElement('button');del.className='chat-recall';del.textContent='删除';del.onclick=()=>action({action:'delete',messageId:m.id}).catch(e=>alert(e.message));meta.append(del);
      if(m.name!==auth?.username){const mu=document.createElement('button');mu.className='chat-recall';mu.textContent=(g.muted||[]).includes(m.name)?'解除禁言':'禁言';mu.onclick=()=>action({action:(g.muted||[]).includes(m.name)?'unmute':'mute',username:m.name}).catch(e=>alert(e.message));meta.append(mu);}}
@@ -87,7 +109,7 @@ function render(){
  list.scrollTop=atBottom?list.scrollHeight:oldTop;
  form.hidden=g.chatPaused&&!data.admin;input.disabled=form.hidden;
  members.replaceChildren();for(const m of g.members||[]){const row=document.createElement('div');row.className='group-member-card';const al=document.createElement('a');al.href='/profile/'+encodeURIComponent(m.username);al.className='avatar-profile-link';al.append(avatarImage(m.username,m.avatar));row.append(al);const info=document.createElement('span');info.className='group-member-info';const n=document.createElement('a');n.href='/profile/'+encodeURIComponent(m.username);n.textContent=m.username;colorRating(n,m.rating??1500);n.dataset.username=m.username;const detail=document.createElement('small');detail.textContent=`${m.rating??1500}${m.rank?' · '+m.rank:''}`;info.append(n,detail);row.append(info);members.append(row);}
- muted.replaceChildren();if(data.admin&&(g.muted||[]).length){const label=document.createElement('span');label.textContent='已禁言：';muted.append(label);for(const u of g.muted){const b=document.createElement('button');b.textContent=`${u} ×`;b.onclick=()=>action({action:'unmute',username:u}).catch(e=>alert(e.message));muted.append(b);}}
+ renderMutedUsers(muted,data.admin?(g.muted||[]):[],username=>action({action:'unmute',username}).catch(e=>alert(e.message)));
 }
 async function load(force=false){if(loading&&!force)return;loading=true;try{const r=await fetch('/api/groups',{headers:headers(),cache:'no-store'});const b=await r.json();if(!r.ok)throw Error(b.error);data=b;
  if(data.admin){select.hidden=false;const keep=current||data.current||data.groups[0]?.id;select.replaceChildren(...data.groups.map(g=>new Option(g.name,g.id)));select.value=data.groups.some(g=>g.id===keep)?keep:(data.groups[0]?.id||'');current=select.value;select.onchange=()=>{current=select.value;render();};}else current=data.current;render();

@@ -1,4 +1,5 @@
 import {renderRichChatBody,attachChatFold,releaseChatFolds} from './chat-common.js';
+import {copySourceButton,renderMutedUsers} from './chat-controls.js';
 import {emojiGroups,emojis} from './emojis.js';
 import {colorRating} from './rating-colors.js';
 import {avatarImage,messageTime} from './avatars.js';
@@ -823,10 +824,6 @@ function buildChatActions(scope, item) {
       actions.append(chatAction(muted.includes(item.name) ? '解除禁言' : '禁言', () => emitModerate(scope, muted.includes(item.name) ? 'unmute' : 'mute', { username: item.name })));
     }
   }
-  if (isAdminNow() && !isSelf && !item.admin) {
-    const banned = bannedUsers.includes(item.name);
-    actions.append(chatAction(banned ? '解除全站禁言' : '全站禁言', () => emitModerate(scope, banned ? 'unban' : 'ban', { username: item.name })));
-  }
   return actions;
 }
 const renderedChats=new WeakMap();
@@ -880,7 +877,7 @@ function renderChat(messages = state?.chat || [], list = $('#chat-list')) {
     colorRating(name, item.rating ?? 1500);
     meta.append(name);
     if(showAvatars){const avatarLink=document.createElement('a');avatarLink.href='/profile/'+encodeURIComponent(item.name);avatarLink.className='avatar-profile-link';avatarLink.append(avatarImage(item.name,item.avatar));meta.prepend(avatarLink);}
-    const time=messageTime(item.time);if(time)meta.append(time);
+    const time=messageTime(item.time);if(time)meta.append(time);meta.append(copySourceButton(item.text));
     if (scope !== 'announcement') meta.append(buildChatActions(scope, item));
     else if (auth?.admin) {
       const remove = addControl('删除', 'alt', async () => {
@@ -905,6 +902,10 @@ function renderChat(messages = state?.chat || [], list = $('#chat-list')) {
   }
   list.scrollTop=shouldFollow?list.scrollHeight:oldTop;
   requestAnimationFrame(()=>{if(list._followChatBottom)list.scrollTop=list.scrollHeight;});
+  if(list.id==='lobby-chat-list'){
+    let panel=$('#lobby-muted-users');if(!panel){panel=document.createElement('div');panel.id='lobby-muted-users';panel.className='chat-muted-users';list.after(panel);}
+    renderMutedUsers(panel,isAdminNow()?lobbyMuted:[],username=>emitModerate('lobby','unmute',{username}));
+  }
   if(list.id==='chat-list') {
     $('#room-muted-users')?.remove();
     if(state?.isHost || state?.viewerIsAdmin) {

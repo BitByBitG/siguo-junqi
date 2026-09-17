@@ -34,6 +34,8 @@
     <script src="/vendor/marked/marked.umd.js"></script><script src="/vendor/dompurify/purify.min.js"></script><script src="/vendor/katex/katex.min.js"></script><script src="/vendor/katex/contrib/auto-render.min.js"></script>
     <script type="module">
       import "/secure.js";
+      import {addSelection,installBatch} from '/admin-batch.js';
+      import {copySourceButton} from '/chat-controls.js';
       import {renderRichChatBody,attachChatFold,releaseChatFolds} from "/chat-common.js";
       import {colorRating} from '/rating-colors.js';
       import {avatarImage,messageTime} from '/avatars.js';
@@ -115,7 +117,7 @@
             const text = document.createElement('span'); text.className='chat-content'; text.textContent = item.text;
             const remove = document.createElement('button'); remove.textContent = '删除';
             remove.onclick = async () => {try {await request(`/api/announcements/${item.id}`,{method:'DELETE'});await loadAnnouncements();}catch(error){result.textContent=error.message;}};
-            const content=document.createElement('div');content.append(messageHeader(item),text);row.append(content,remove); target.append(row);
+            const content=document.createElement('div');content.append(messageHeader(item),text);row.append(content,copySourceButton(item.text),remove); target.append(row);
           }
         } catch(error) {result.textContent=error.message;}
       }
@@ -136,13 +138,12 @@
         try {
           const data=await request(chatEndpoint());const list=document.querySelector('#admin-chat'),mutes=document.querySelector('#chat-mutes');releaseChatFolds(list);list.replaceChildren();mutes.replaceChildren();
           for(const username of data.muted){const button=document.createElement('button');button.textContent=`解除禁言：${username}`;button.onclick=()=>moderateChat({action:'unmute',username});mutes.append(button);}
-          for(const username of data.banned||[]){const button=document.createElement('button');button.textContent=`解除全站禁言：${username}`;button.onclick=()=>moderateChat({action:'unban',username});mutes.append(button);}
           for(const item of [...data.messages].reverse()) {
             const row=document.createElement('div');row.className='account-row';const pick=document.createElement('input');pick.type='checkbox';pick.className='chat-pick';pick.value=item.id;row.append(pick);const text=document.createElement('span');text.className='chat-content';const content=document.createElement('div');content.className='admin-message-content';renderRichChatBody(text,item.text,headers());content.append(messageHeader(item),text);attachChatFold(content,text,`admin:${chatScope.value}:${item.id}`);row.append(content);
 
             const button=document.createElement('button');button.textContent='删除';button.onclick=()=>moderateChat({action:'delete',ids:[item.id]});row.append(button);
             const mute=document.createElement('button');mute.textContent='禁言';mute.onclick=()=>moderateChat({action:'mute',username:item.name});row.append(mute);
-            const ban=document.createElement('button');ban.textContent='全站禁言';ban.onclick=()=>moderateChat({action:'ban',username:item.name});row.append(ban);list.append(row);
+            row.append(copySourceButton(item.text));list.append(row);
           }
         }catch(error){result.textContent=error.message;}
       }
@@ -206,8 +207,12 @@
             const open=document.createElement('a');open.href='/room/'+room.code;open.textContent='查看';actions.append(open);
             if(room.phase!=='finished'){const finish=document.createElement('button');finish.textContent='结束比赛';finish.onclick=async()=>{if(!confirm('结束比赛并保留记录？本局不计分。'))return;try{await request('/api/admin/rooms/'+encodeURIComponent(room.code)+'/finish',{method:'POST'});await loadRooms();}catch(e){result.textContent=e.message;}};actions.append(finish);}
             const clear=document.createElement('button');clear.textContent='删除聊天记录';clear.onclick=async()=>{if(!confirm('删除该房间全部聊天记录，保留棋谱？'))return;try{await request('/api/admin/rooms/'+encodeURIComponent(room.code)+'/chat',{method:'DELETE'});await loadRooms();}catch(e){result.textContent=e.message;}};
-            actions.append(clear,button);row.append(text,actions); target.append(row);
+            actions.append(clear,button);row.append(text,actions);addSelection(row,room.code);target.append(row);
           }
+          installBatch(target,[
+            {text:'删除所选房间',danger:true,run:id=>request('/api/admin/rooms/'+encodeURIComponent(id),{method:'DELETE'})},
+            {text:'删除所选聊天记录',danger:true,run:id=>request('/api/admin/rooms/'+encodeURIComponent(id)+'/chat',{method:'DELETE'})}
+          ],loadRooms,result);
         } catch (error) { target.textContent = error.message; }
       }
       document.querySelector('#refresh-rooms').onclick = loadRooms;
@@ -232,7 +237,7 @@
             const row = document.createElement("div");
             row.className = "account-row";
             const name = document.createElement("span");
-            name.textContent = `${username} · ${account.admin ? "管理员账号" : account.accountType === "bot" ? "BOT 账号" : "玩家账号"} · ${account.rank} · ${account.rating}（${account.ratedGames} 局，最高 ${account.peakRating}）`;
+            name.textContent = `${username} · ${account.admin ? "管理员账号" : account.accountType === "bot" ? "BOT 账号" : "玩家账号"} · ${account.rank} · ${account.rating}（${account.ratedGames} 局，最高 ${account.peakRating}）${account.blocked?' · 已封禁':''}${account.globallyMuted?' · 已全站禁言':''}`;
             colorRating(name, account.rating);
             const ratingInput = document.createElement("input");
             ratingInput.className = "rating-input"; ratingInput.type = "number";
@@ -276,10 +281,15 @@
               row.append(name, ratingInput, saveRating, button);
             }
             const block=document.createElement('button');block.className='icon-button';block.textContent=account.blocked?'解封':'封禁';block.onclick=async()=>{try{await request('/api/admin/accounts/'+encodeURIComponent(username)+'/block',{method:'PATCH',body:JSON.stringify({blocked:!account.blocked})});await loadAccounts();}catch(e){result.textContent=e.message;}};row.append(block);
-            const mute=document.createElement('button');mute.className='icon-button';mute.textContent=account.globallyMuted?'解除禁言':'全站禁言';mute.onclick=async()=>{await moderateChat({action:account.globallyMuted?'unban':'ban',username});await loadAccounts();};row.append(mute);
+            const mute=document.createElement('button');mute.className='icon-button';mute.textContent=account.globallyMuted?'解除全站禁言':'全站禁言';mute.onclick=async()=>{try{await request('/api/admin/chat',{method:'POST',body:JSON.stringify({action:account.globallyMuted?'unban':'ban',username})});await loadAccounts();}catch(e){result.textContent=e.message;}};row.append(mute);
             const actions=document.createElement('div');actions.className='account-edit-actions';for(const child of [...row.children].slice(1))actions.append(child);row.append(actions);
-            list.append(row);
+            addSelection(row,username);list.append(row);
           }
+          installBatch(list,[
+            {text:'删除',danger:true,run:username=>request('/api/admin/accounts/'+encodeURIComponent(username),{method:'DELETE'})},
+            ...[true,false].map(blocked=>({text:blocked?'封禁':'解封',run:username=>request('/api/admin/accounts/'+encodeURIComponent(username)+'/block',{method:'PATCH',body:JSON.stringify({blocked})})})),
+            ...['ban','unban'].map(action=>({text:action==='ban'?'全站禁言':'解除全站禁言',run:username=>request('/api/admin/chat',{method:'POST',body:JSON.stringify({action,username})})}))
+          ],loadAccounts,result);
         } catch (error) { list.textContent = error.message; }
       }
       async function loadRequests() {
@@ -300,8 +310,9 @@
                 catch (error) { result.textContent = error.message; row.querySelectorAll("button").forEach(b => b.disabled = false); }
               }; row.append(button);
             }
-            target.append(row);
+            addSelection(row,item.username);target.append(row);
           }
+          installBatch(target,['approve','reject'].map(action=>({text:action==='approve'?'通过':'拒绝',run:username=>request('/api/admin/registrations/'+encodeURIComponent(username),{method:'POST',body:JSON.stringify({action})})})),async()=>{await loadRequests();await loadAccounts();},result);
         } catch (error) { target.textContent = error.message; }
       }
       document.querySelector("#refresh-requests").onclick = loadRequests;
