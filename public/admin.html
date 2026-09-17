@@ -27,7 +27,7 @@
       <section><h2>注册申请</h2><button id="refresh-requests" class="secondary-button" type="button">加载 / 刷新申请</button><div id="request-list" class="account-list">输入管理密钥后加载申请</div></section>
       <section><h2>所有房间</h2><button id="refresh-rooms" type="button" class="secondary-button">加载 / 刷新房间</button><div id="admin-rooms"></div></section>
       <section><h2>聊天管理</h2><select id="admin-chat-scope"><option value="">首页聊天</option></select><button id="refresh-chat" type="button">加载 / 刷新</button><button id="chat-select-all" type="button">全选</button><button id="chat-delete-selected" type="button">删除所选</button><input id="mute-username" placeholder="要禁言的完整用户名" /><button id="mute-chat-user" type="button">禁言</button><div id="chat-mutes"></div><div id="admin-chat"></div></section>
-      <section><h2>分组管理</h2><div class="studio-toolbar"><input id="new-group-id" placeholder="分组 ID"><input id="new-group-name" placeholder="分组名称"><button id="create-group" type="button">新建分组</button><button id="refresh-groups" type="button">刷新</button><span id="group-refresh-status"></span></div><div id="admin-groups"></div><h3>成员设置</h3><div id="admin-group-members"></div></section><section><h2>公告管理</h2><button id="refresh-announcements" type="button">加载 / 刷新公告</button><div id="admin-announcements"></div><form id="admin-announcement-form" class="chat-form"><textarea id="admin-announcement-text" maxlength="8000" rows="4" placeholder="公告正文，支持 Markdown 与 LaTeX"></textarea><button type="submit">发布公告</button></form></section>
+      <section><h2>分组管理</h2><div class="studio-toolbar"><input id="new-group-id" placeholder="分组 ID"><input id="new-group-name" placeholder="分组名称"><button id="create-group" type="button">新建分组</button><button id="refresh-groups" type="button">刷新</button><span id="group-refresh-status"></span></div><div id="admin-groups"></div></section><section><h2>公告管理</h2><button id="refresh-announcements" type="button">加载 / 刷新公告</button><div id="admin-announcements"></div><form id="admin-announcement-form" class="chat-form"><textarea id="admin-announcement-text" maxlength="8000" rows="4" placeholder="公告正文，支持 Markdown 与 LaTeX"></textarea><button type="submit">发布公告</button></form></section>
     </main>
     
     <link rel="stylesheet" href="/vendor/katex/katex.min.css">
@@ -175,10 +175,7 @@
             const actions=document.createElement('div');actions.className='group-admin-actions';actions.append(save,del);
             options.append(lc,lp,li,quota,keepLabel,actions);row.append(head,options);box.append(row);
           }
-          const members=await request('/api/admin/group-members');const mb=document.querySelector('#admin-group-members');mb.replaceChildren();
-          const toolbar=document.createElement('div');toolbar.className='studio-toolbar';const all=document.createElement('button');all.textContent='全选';const target=document.createElement('select');for(const x of adminGroups)target.add(new Option(x.name,x.id));const batch=document.createElement('button');batch.textContent='批量更改分组';toolbar.append(all,target,batch);mb.append(toolbar);
-          for(const m of members){const row=document.createElement('div');row.className='account-row';const pick=document.createElement('input');pick.type='checkbox';pick.className='group-member-pick';pick.value=m.username;const profile=document.createElement('a');profile.href='/profile/'+encodeURIComponent(m.username);profile.textContent=m.username;const sel=document.createElement('select');for(const x of adminGroups)sel.add(new Option(x.name,x.id));sel.value=m.groupId;const save=document.createElement('button');save.textContent='更改分组';save.onclick=async()=>{await request('/api/admin/group-members/'+encodeURIComponent(m.username),{method:'PATCH',body:JSON.stringify({groupId:sel.value})});await loadGroups();};row.append(pick,profile,document.createTextNode(' · '),sel,save);mb.append(row);}
-          all.onclick=()=>mb.querySelectorAll('.group-member-pick').forEach(x=>x.checked=true);batch.onclick=async()=>{const usernames=[...mb.querySelectorAll('.group-member-pick:checked')].map(x=>x.value);if(!usernames.length)return;if(!confirm(`将 ${usernames.length} 个成员移动到“${target.selectedOptions[0]?.textContent||target.value}”？`))return;await request('/api/admin/group-members',{method:'PATCH',body:JSON.stringify({usernames,groupId:target.value})});for(const row of mb.querySelectorAll('.account-row')){const pick=row.querySelector('.group-member-pick');if(pick?.checked){const sel=row.querySelector('select');if(sel)sel.value=target.value;}}await loadGroups();};
+          if(document.querySelector('#account-list .account-row'))await loadAccounts();
           status.textContent='已刷新';
         }catch(e){status.textContent='刷新失败：'+e.message;result.textContent=e.message;}
       }
@@ -280,6 +277,11 @@
             }
             const block=document.createElement('button');block.className='icon-button';block.textContent=account.blocked?'解封':'封禁';block.onclick=async()=>{try{await request('/api/admin/accounts/'+encodeURIComponent(username)+'/block',{method:'PATCH',body:JSON.stringify({blocked:!account.blocked})});await loadAccounts();}catch(e){result.textContent=e.message;}};row.append(block);
             const mute=document.createElement('button');mute.className='icon-button';mute.textContent=account.globallyMuted?'解除全站禁言':'全站禁言';mute.onclick=async()=>{try{await request('/api/admin/chat',{method:'POST',body:JSON.stringify({action:account.globallyMuted?'unban':'ban',username})});await loadAccounts();}catch(e){result.textContent=e.message;}};row.append(mute);
+            if(account.accountType==='human'){
+              const groupSelect=document.createElement('select');groupSelect.className='account-group-select';for(const group of adminGroups)groupSelect.add(new Option(group.name,group.id));groupSelect.value=account.groupId||'default';
+              const groupSave=document.createElement('button');groupSave.textContent='改分组';groupSave.onclick=async()=>{try{await request('/api/admin/group-members/'+encodeURIComponent(username),{method:'PATCH',body:JSON.stringify({groupId:groupSelect.value})});result.textContent=`${username} 已移至 ${groupSelect.selectedOptions[0]?.textContent}`;await loadAccounts();}catch(e){result.textContent=e.message;}};
+              row.append(groupSelect,groupSave);
+            }
             const actions=document.createElement('div');actions.className='account-edit-actions';for(const child of [...row.children].slice(1))actions.append(child);row.append(actions);
             addSelection(row,username);list.append(row);
           }
@@ -288,6 +290,8 @@
             ...[true,false].map(blocked=>({text:blocked?'封禁':'解封',run:username=>request('/api/admin/accounts/'+encodeURIComponent(username)+'/block',{method:'PATCH',body:JSON.stringify({blocked})})})),
             ...['ban','unban'].map(action=>({text:action==='ban'?'全站禁言':'解除全站禁言',run:username=>request('/api/admin/chat',{method:'POST',body:JSON.stringify({action,username})})}))
           ],loadAccounts,result);
+          const batchBar=list.querySelector('.admin-batch-toolbar');
+          if(batchBar&&adminGroups.length){const target=document.createElement('select');target.className='account-group-select';for(const group of adminGroups)target.add(new Option(group.name,group.id));const move=document.createElement('button');move.textContent='所选改分组';move.onclick=async()=>{const usernames=[...list.querySelectorAll('.admin-pick:checked')].map(x=>x.value);if(!usernames.length)return;if(!confirm(`将所选 ${usernames.length} 个账号移至“${target.selectedOptions[0]?.textContent}”？`))return;try{await request('/api/admin/group-members',{method:'PATCH',body:JSON.stringify({usernames,groupId:target.value})});await loadAccounts();}catch(e){result.textContent=e.message;}};batchBar.append(target,move);}
         } catch (error) { list.textContent = error.message; }
       }
       async function loadRequests() {

@@ -95,7 +95,6 @@ h2,h3,h4 { color:var(--ink); }
 :root .chat-panel.chat-expanded { padding:16px; }
 :root .chat-expanded .chat-list { max-height:none; }
 .site-game-tools { display:flex; justify-content:flex-end; padding:10px 0 0; }
-.site-game-tools #stealth-button { min-height:38px; padding:8px 18px; font-size:15px; }
 .admin-directory,.profile-tabs { display:flex; flex-wrap:wrap; gap:8px 18px; padding:12px 14px; margin:0 0 22px; border:1px solid var(--line); background:#2d333b; }
 .admin-directory { position:sticky; top:0; z-index:5; }
 .admin-shell > section { scroll-margin-top:76px; }
@@ -156,9 +155,6 @@ h2,h3,h4 { color:var(--ink); }
 .group-admin-options input[type=number]{width:58px!important;min-width:58px;padding:4px 6px}
 .group-admin-actions{display:flex;gap:6px;margin-left:auto}
 .group-admin-actions button{width:auto!important;min-width:0!important;padding:5px 10px!important;min-height:30px!important}
-#admin-group-members .account-row{display:flex;justify-content:flex-start;gap:8px;padding:6px 8px}
-#admin-group-members .account-row select{width:auto;min-width:120px}
-#admin-group-members .account-row button{width:auto!important;min-width:0!important}
 @media(max-width:760px){.group-admin-head{min-width:100%;}.group-admin-actions{margin-left:0}}
 
 .group-page{max-width:1050px;margin:0 auto}

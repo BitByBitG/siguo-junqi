@@ -19,18 +19,12 @@ const boardSvg = $("#game-board");
 const toast = $("#toast");
 
 const seatShort = { north: "北", east: "东", south: "南", west: "西" };
-const stealthSeatColors = {
-  north: "#70757a",
-  east: "#6b4c35",
-  south: "#274634",
-  west: "#263a55",
-};
+const seatColors = { north: "#808080", east: "#800000", south: "#008000", west: "#000080" };
 let boardMeta = null;
 let state = null;
 let selected = null;
 let awaitingRoom = false;
 let toastTimer = null;
-let stealthMode = localStorage.getItem("junqi-stealth") === "1";
 let auth = null;
 let mentionNotifications = localStorage.getItem('junqi-mention-notifications') === '1';
 const mentionButton = $('#mention-notifications');
@@ -173,18 +167,9 @@ function showToast(message, kind = "error") {
   toastTimer = setTimeout(() => { toast.className = "toast"; }, 2800);
 }
 
-function applyStealthMode() {
-  document.body.classList.toggle("stealth-mode", !!state && stealthMode);
-  const button = $("#stealth-button");
-  button.textContent = stealthMode ? "退出隐蔽" : "隐蔽模式";
-  button.setAttribute("aria-pressed", String(stealthMode));
-}
-
 function seatColor(seat) {
-  return stealthMode ? stealthSeatColors[seat] : boardMeta?.seatColors[seat];
+  return seatColors[seat] || boardMeta?.seatColors[seat];
 }
-
-applyStealthMode();
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
@@ -315,7 +300,6 @@ socket.on("room-state", (nextState) => {
   if (selected && !state.pieces.some((piece) => piece.position === selected)) selected = null;
   entryScreen.classList.add("hidden");
   gameScreen.classList.remove("hidden");
-  applyStealthMode();
   window.dispatchEvent(new Event('junqi-page-change'));
   render();
 });
@@ -334,7 +318,7 @@ function exitClosedRoom(message) {
   gameScreen.classList.add("hidden"); entryScreen.classList.remove("hidden");
   $('#chat-list').closest('.chat-panel').classList.remove('chat-expanded');
   history.replaceState(null, "", '/'); showToast(message);
-  applyStealthMode(); window.dispatchEvent(new Event('junqi-page-change'));
+  window.dispatchEvent(new Event('junqi-page-change'));
 }
 socket.on("kicked", () => exitClosedRoom("你已被房主踢出房间"));
 socket.on("room-closed", () => exitClosedRoom("房主已关闭房间"));
@@ -419,21 +403,18 @@ function renderBoard() {
   }
   boardSvg.append(roadLayer, railBaseLayer, railLayer);
 
-  if (state.lastMove) {
-    const fromNode = nodeMap.get(state.lastMove.from);
-    const toNode = nodeMap.get(state.lastMove.to);
-    if (fromNode && toNode) {
-      const from = transformPoint(fromNode);
-      const to = transformPoint(toNode);
-      moveLayer.append(svgElement("polyline", {
-        points: (state.lastMove.path || [state.lastMove.from, state.lastMove.to]).map(id => nodeMap.get(id)).filter(Boolean).map(node => { const p = transformPoint(node); return `${p.x},${p.y}`; }).join(' '),
-        fill: 'none',
-        class: "last-move-path",
-      }));
-      moveLayer.append(svgElement("circle", { cx: from.x, cy: from.y, r: 0.22, class: "last-move-endpoint" }));
-      moveLayer.append(svgElement("circle", { cx: to.x, cy: to.y, r: 0.26, class: "last-move-endpoint last-move-target" }));
-    }
-  }
+  const defs=svgElement('defs');
+  const marker=svgElement('marker',{id:'move-arrow',viewBox:'0 0 10 10',refX:'8',refY:'5',markerWidth:'.7',markerHeight:'.7',orient:'auto-start-reverse'});
+  marker.append(svgElement('path',{d:'M 0 0 L 10 5 L 0 10 z',class:'last-move-arrow'}));defs.append(marker);boardSvg.append(defs);
+  const trails=state.moveTrails?.length?state.moveTrails:(state.lastMove?[state.lastMove]:[]);
+  trails.forEach((move,index)=>{
+    if(!nodeMap.has(move.from)||!nodeMap.has(move.to))return;
+    const opacity=trails.length===1?1:.32+.68*index/(trails.length-1);
+    moveLayer.append(svgElement('polyline',{
+      points:(move.path||[move.from,move.to]).map(id=>nodeMap.get(id)).filter(Boolean).map(node=>{const p=transformPoint(node);return `${p.x},${p.y}`;}).join(' '),
+      class:'last-move-path','marker-end':'url(#move-arrow)',opacity:opacity.toFixed(2),
+    }));
+  });
 
   const labelPoints = {
     north: { x: 8, y: 2.5 }, east: { x: 13.5, y: 8 }, south: { x: 8, y: 13.5 }, west: { x: 2.5, y: 8 },
@@ -482,8 +463,8 @@ function renderBoard() {
       role: "button",
       "aria-label": piece.type ? `${boardMeta.seatNames[piece.owner]}${boardMeta.pieceNames[piece.type]}` : `${boardMeta.seatNames[piece.owner]}暗棋`,
     });
-    group.append(svgElement("rect", { x: point.x - 0.47, y: point.y - 0.36, width: 0.94, height: 0.72, class: "piece-border" }));
-    group.append(svgElement("rect", { x: point.x - 0.45, y: point.y - 0.34, width: 0.90, height: 0.68, fill: color, class: "piece-body" }));
+    group.append(svgElement("rect", { x: point.x - 0.56, y: point.y - 0.42, width: 1.12, height: 0.84, class: "piece-border" }));
+    group.append(svgElement("rect", { x: point.x - 0.53, y: point.y - 0.39, width: 1.06, height: 0.78, fill: color, class: "piece-body" }));
     if (piece.type) {
       const label = svgElement("text", { x: point.x, y: point.y + 0.018, class: "piece-label" });
       label.textContent = boardMeta.pieceNames[piece.type];
@@ -501,10 +482,10 @@ function renderBoard() {
     });
     if (lastMoved) {
       group.append(svgElement("rect", {
-        x: point.x - 0.52,
-        y: point.y - 0.41,
-        width: 1.04,
-        height: 0.82,
+        x: point.x - 0.60,
+        y: point.y - 0.46,
+        width: 1.20,
+        height: 0.92,
         rx: 0.14,
         class: "last-moved-outline",
       }));
@@ -1066,32 +1047,30 @@ $("#leave-button").addEventListener("click", () => {
   });
 });
 
-$("#stealth-button").addEventListener("click", () => {
-  stealthMode = !stealthMode;
-  localStorage.setItem("junqi-stealth", stealthMode ? "1" : "0");
-  applyStealthMode();
-  window.dispatchEvent(new Event("junqi-theme-refresh"));
-  if (state) {
-    renderPlayers();
-    renderBoard();
-  }
-});
-
 socket.on("account-deleted", () => {
   localStorage.removeItem("junqi-auth");
   localStorage.removeItem("junqi-session");
   window.location.reload();
 });
 
-window.addEventListener("junqi-theme", () => { stealthMode = localStorage.getItem("junqi-stealth") === "1"; applyStealthMode(); if (state) { renderPlayers(); renderBoard(); } });
 function refreshPreferences(){
-  mentionNotifications=localStorage.getItem('junqi-mention-notifications')==='1';turnNotifications=localStorage.getItem('junqi-turn-notifications')==='1';stealthMode=localStorage.getItem('junqi-stealth')==='1';
-  renderMentionSetting();updateNotificationButton();$('#lobby-mentions').textContent=mentionButton.textContent;applyStealthMode();
+  mentionNotifications=localStorage.getItem('junqi-mention-notifications')==='1';turnNotifications=localStorage.getItem('junqi-turn-notifications')==='1';
+  renderMentionSetting();updateNotificationButton();$('#lobby-mentions').textContent=mentionButton.textContent;
   if(!turnNotifications)activeTurnNotification?.close();
   if(state){renderPlayers();renderBoard();renderChat();}renderChat(lobbyChatState,$('#lobby-chat-list'));renderChat(announcementState,$('#announcement-list'));
 }
-window.addEventListener('storage',e=>{if(['junqi-chat-avatars','junqi-stealth','junqi-turn-notifications','junqi-mention-notifications'].includes(e.key))refreshPreferences();});
+window.addEventListener('storage',e=>{if(['junqi-chat-avatars','junqi-turn-notifications','junqi-mention-notifications'].includes(e.key))refreshPreferences();});
 window.addEventListener('junqi-preferences',refreshPreferences);
+
+const boardOpacity=$('#board-opacity');
+function applyBoardOpacity(){
+  const value=Math.max(25,Math.min(100,Number(boardOpacity.value)||100));
+  document.documentElement.style.setProperty('--board-opacity',String(value/100));
+  $('#board-opacity-value').value=`${value}%`;
+  localStorage.setItem('junqi-board-opacity',String(value));
+}
+boardOpacity.value=localStorage.getItem('junqi-board-opacity')||'100';
+boardOpacity.addEventListener('input',applyBoardOpacity);applyBoardOpacity();
 
 document.querySelectorAll("[data-logout]").forEach(button => {
   button.addEventListener("click", async () => {

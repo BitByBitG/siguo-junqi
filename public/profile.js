@@ -28,7 +28,7 @@ try{
   const response=await fetch('/api/profile/'+encodeURIComponent(username));const user=await response.json();if(!response.ok)throw Error(user.error);username=user.username;
   document.title=username+' · 四国军棋';$('#profile-name').textContent=username;colorRating($('#profile-name'),user.rating);
   $('#profile-rank').textContent=user.rank;colorRating($('#profile-rank'),user.rating);
-  const signatureSection=document.createElement('section'),signatureTitle=node('h2','个性签名'),signature=node('div');signature.className='profile-signature';signatureSection.append(signatureTitle,signature);$('#profile-info').after(signatureSection);renderRichChatBody(signature,user.signature||'');
+  const signatureSection=document.createElement('section'),signatureTitle=node('h2','个性签名'),signature=node('div');signature.className='profile-signature chat-content';signatureSection.append(signatureTitle,signature);$('#profile-info').after(signatureSection);renderRichChatBody(signature,user.signature||'');
   for(const [key,value]of [['类型',user.accountType==='bot'?'BOT':'玩家'],['Rating',user.rating],['最高 Rating',user.peakRating],['计分场次',user.ratedGames],...(user.createdAt?[['注册时间',date(user.createdAt)]]:[])])$('#profile-details').append(node('dt',key),node('dd',value));
   let auth;try{auth=JSON.parse(localStorage.getItem('junqi-auth'));}catch{}$('#own-settings').hidden=auth?.username!==username;
   chart(user.history,user.rating);if(!user.history.length)$('#chart-empty').textContent='暂无记录';

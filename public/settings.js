@@ -5,7 +5,7 @@ const signatureSection=document.createElement('section');signatureSection.innerH
 const signatureForm=document.querySelector('#signature-form'),signatureInput=document.querySelector('#signature-input'),signatureResult=document.querySelector('#signature-result');
 try{const auth=JSON.parse(localStorage.getItem('junqi-auth')||'null');if(auth?.username){const r=await fetch('/api/profile/'+encodeURIComponent(auth.username));if(r.ok)signatureInput.value=(await r.json()).signature||'';}}catch{}
 signatureForm.onsubmit=async e=>{e.preventDefault();try{const auth=JSON.parse(localStorage.getItem('junqi-auth')||'null');const r=await fetch('/api/profile/signature',{method:'PATCH',headers:{'content-type':'application/json',Authorization:`Bearer ${auth?.token||''}`},body:JSON.stringify({signature:signatureInput.value})}),b=await r.json();if(!r.ok)throw Error(b.error);signatureResult.textContent='个性签名已保存。';}catch(error){signatureResult.textContent=error.message;}};
-const prefs=[['开启 @ 提醒','junqi-mention-notifications'],['开启走棋提醒','junqi-turn-notifications'],['对局隐蔽模式','junqi-stealth'],['显示聊天头像','junqi-chat-avatars',true]];
+const prefs=[['开启 @ 提醒','junqi-mention-notifications'],['开启走棋提醒','junqi-turn-notifications'],['显示聊天头像','junqi-chat-avatars',true]];
 for(const [title,key,defaultOn]of prefs){
   const label=document.createElement('label'),input=document.createElement('input');input.type='checkbox';input.checked=defaultOn?localStorage.getItem(key)!=='0':localStorage.getItem(key)==='1';label.append(input,document.createTextNode(title));options.append(label);
   input.onchange=async()=>{const enabled=input.checked;input.disabled=true;try{

@@ -75,7 +75,6 @@
           <button id="room-code-button" class="room-code-button" title="复制邀请链接"><span>房间</span><strong id="room-code-label">------</strong><i>复制邀请</i></button>
           <div class="topbar-actions">
             <button id="turn-notifications" class="icon-button" type="button" aria-pressed="false">走棋通知：关</button>
-            <button id="stealth-button" class="icon-button" type="button" aria-pressed="false">隐蔽模式</button>
             <button id="leave-button" class="icon-button danger-text" type="button">离开</button>
           </div>
         </header>
@@ -97,9 +96,41 @@
           <section class="board-stage">
             <div id="turn-banner" class="turn-banner"></div>
             <div class="board-frame">
+              <pre class="board-disguise" aria-hidden="true"><code><span class="cpp-keyword">template</span>&lt;satt_cluster type&gt;
+<span class="cpp-type">void</span> <span class="cpp-function">rotate</span>(<span class="cpp-type">int</span> x) {
+  <span class="cpp-type">int</span> f=fa(x),g=fa(f),d=dir(x),y=tr[x].son[!d];
+  <span class="cpp-keyword">if</span>(g) tr[g].son[ms(g)==f?<span class="cpp-number">2</span>:dir(f)]=x;
+  <span class="cpp-keyword">if</span>(y) fa(y)=f;
+  fa(x)=g,tr[x].son[!d]=f; fa(f)=x,tr[f].son[d]=y;
+  push_up&lt;type&gt;(f); push_up&lt;type&gt;(x);
+}
+<span class="cpp-keyword">template</span>&lt;satt_cluster type&gt;
+<span class="cpp-type">void</span> <span class="cpp-function">splay</span>(<span class="cpp-type">int</span> x,<span class="cpp-type">int</span> guard=<span class="cpp-number">0</span>) {
+  push_path&lt;type&gt;(x);
+  <span class="cpp-keyword">for</span>(<span class="cpp-type">int</span> y;y=fa(x),!is_root(x)&amp;&amp;y!=guard;rotate&lt;type&gt;(x))
+    <span class="cpp-keyword">if</span>(fa(y)!=guard&amp;&amp;!is_root(y)) rotate&lt;type&gt;(dir(y)==dir(x)?y:x);
+}
+<span class="cpp-type">void</span> <span class="cpp-function">erase</span>(<span class="cpp-type">int</span> x) {
+  setf(ms(x),fa(x),<span class="cpp-number">1</span>);
+  <span class="cpp-keyword">if</span>(ls(x)) { <span class="cpp-type">int</span> y=ls(x); push_down&lt;satt_rake&gt;(y);
+    <span class="cpp-keyword">while</span>(rs(y)) y=rs(y),push_down&lt;satt_rake&gt;(y);
+    splay&lt;satt_rake&gt;(y,x); setf(rs(x),y,<span class="cpp-number">1</span>); setf(y,fa(x),<span class="cpp-number">2</span>);
+  } <span class="cpp-keyword">else</span> setf(rs(x),fa(x),<span class="cpp-number">2</span>); delete_node(x);
+}
+<span class="cpp-type">void</span> <span class="cpp-function">splice</span>(<span class="cpp-type">int</span> x) {
+  splay&lt;satt_rake&gt;(x); <span class="cpp-type">int</span> y=fa(x); splay&lt;satt_compress&gt;(y);
+  <span class="cpp-keyword">if</span>(rs(y)) swap(fa(ms(x)),fa(rs(y))),swap(ms(x),rs(y)); <span class="cpp-keyword">else</span> erase(x);
+}
+<span class="cpp-type">int</span> <span class="cpp-function">access</span>(<span class="cpp-type">int</span> x) {
+  splay&lt;satt_compress&gt;(x); <span class="cpp-type">int</span> z=x;
+  <span class="cpp-keyword">while</span>(fa(x)) splice(fa(x)),x=fa(x),push_up&lt;satt_compress&gt;(x);
+  splay&lt;satt_compress&gt;(z); <span class="cpp-keyword">return</span> x;
+}</code></pre>
+              <div class="board-tint" aria-hidden="true"></div>
               <svg id="game-board" viewBox="-0.8 -0.8 17.6 17.6" role="application" aria-label="四国军棋棋盘"></svg>
               <div class="board-emblem" aria-hidden="true">軍</div>
             </div>
+            <div class="board-opacity-control"><label for="board-opacity">棋盘透明度</label><input id="board-opacity" type="range" min="25" max="100" step="5" value="100"><output id="board-opacity-value">100%</output></div>
             <div id="board-controls" class="board-controls"></div>
           </section>
 

@@ -4,7 +4,6 @@ const header=document.createElement('header');header.className='site-header';
 header.innerHTML='<div class="site-top"><a class="site-brand" href="/"><img src="/favicon.png?v=240" alt=""><strong>四国军棋</strong></a><div class="site-account"></div></div><nav class="site-nav" aria-label="主导航"></nav><div class="site-game-tools" hidden></div>';
 document.body.prepend(header);
 const links=[['首页','/'],['比赛','/contests.html'],['Rating 排名','/ratings.html'],['分组','/groups.html'],['BOT 列表','/bots.html'],['规则','/rules.html'],['API','/bot-api.html'],['广告','/advertisement.html']];
-const stealthButton=document.querySelector('#stealth-button');
 function readAuth(){try{return JSON.parse(localStorage.getItem('junqi-auth')||'null');}catch{return null;}}
 function link(text,href){const a=document.createElement('a');a.href=href;a.textContent=text;return a;}
 function render(){
@@ -18,7 +17,6 @@ function render(){
     actions.append(logout);
     if(auth.blocked){const label=document.createElement('span');label.textContent='已封禁 · 只读';actions.append(label);}
   }else actions.append(link('登录','/login.html?next='+encodeURIComponent(location.pathname)),link('注册','/register.html'));
-  if(stealthButton){const game=document.querySelector('#game-screen'),tools=header.querySelector('.site-game-tools');tools.hidden=!game||game.classList.contains('hidden');tools.append(stealthButton);}
   for(const [text,url]of auth?.accountType==='bot'?[['BOT 工作台','/bot-studio.html']]:[...links,...(auth?.admin?[['管理','/admin.html']]:[])]){
     const a=link(text,url);if(location.pathname===url||(url==='/contests.html'&&location.pathname.startsWith('/room/')))a.setAttribute('aria-current','page');nav.append(a);
   }

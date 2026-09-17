@@ -1,4 +1,5 @@
 import {colorRating} from './rating-colors.js';
+import {renderRichChatBody} from './chat-common.js';
 import "/secure.js";
 const rankingBody = document.querySelector("#ranking-body");
 const signatureHeading=document.createElement('th');signatureHeading.textContent='个性签名';document.querySelector('.ranking-table thead tr').children[2].before(signatureHeading);
@@ -8,6 +9,10 @@ function textCell(value, className = "") {
   cell.textContent = value;
   if (className) cell.className = className;
   return cell;
+}
+function signatureCell(value) {
+  const cell=document.createElement('td');cell.className='signature-snippet chat-content';cell.title=value||'';
+  renderRichChatBody(cell,value||'');return cell;
 }
 
 const botRanking=new URLSearchParams(location.search).get('type')==='bot';
@@ -33,7 +38,7 @@ fetch("/api/ratings"+(botRanking?'?type=bot':''))
       row.append(
         textCell(account.position, "ranking-position"),
         colorRating(textCell(account.username, "ranking-name"), account.rating),
-        textCell((account.signature||'').replace(/[#*_`$<>\[\]]/g,'').replace(/\s+/g,' ').slice(0,48), "signature-snippet"),
+        signatureCell(account.signature),
         colorRating(textCell(account.rank, "rank-badge"), account.rating),
         colorRating(textCell(account.rating, "ranking-rating"), account.rating),
         textCell(account.ratedGames),

@@ -175,6 +175,7 @@ resetRoomsOnce(ROOMS_FILE);
 const savedRooms = loadRoomsArchive();
 for (const room of savedRooms.rooms) {
   initDrawCounters(room);
+  room.moveTrails ||= room.lastMove?.seat ? {[room.lastMove.seat]:room.lastMove} : {};
   if(typeof room.keepRoomHistory!=='boolean') room.keepRoomHistory=!!room.keepChatHistory;
   delete room.keepChatHistory;
   room.privateLogs = new Map(room.privateLogs || []);
@@ -935,6 +936,10 @@ function serializeRoom(room, viewer) {
   const adminReveal = viewerIsAdmin && spectator && viewer?.revealAll === true;
   const revealAll = room.phase === "finished" || adminReveal;
   const botDebug = spectator && room.botDebugEnabled === true && isPureBotRoom(room);
+  const allTrails=Object.values(room.moveTrails||{}).filter(Boolean).sort((a,b)=>a.ply-b.ply);
+  const ownTrail=viewer?.seat ? room.moveTrails?.[viewer.seat] : null;
+  const ownIsLatest=ownTrail && ownTrail.ply===room.lastMove?.ply;
+  const moveTrails=(ownTrail ? allTrails.filter(move=>move.ply>(ownIsLatest?ownTrail.ply-1:ownTrail.ply)) : allTrails).map(move=>({...move}));
   return {
     code: room.code,
     name: room.name || room.code,
@@ -961,6 +966,7 @@ function serializeRoom(room, viewer) {
     spectator,
     activeSeats: room.activeSeats,
     lastMove: room.lastMove || null,
+    moveTrails,
     ratingChanges: room.ratingChanges || null,
     botDebugEnabled: botDebug,
     canToggleBotDebug: (viewer?.name === room.hostName || viewerIsAdmin) && isPureBotRoom(room),
@@ -1283,7 +1289,7 @@ function replayPath(room, from, to) {
   }
   return [from, to];
 }
-const UNDO_FIELDS = ['pieces', 'turn', 'ply', 'lastMove', 'eliminationOrder', 'logs', 'publicBattles', 'replay', 'noCapturePly'];
+const UNDO_FIELDS = ['pieces', 'turn', 'ply', 'lastMove', 'moveTrails', 'eliminationOrder', 'logs', 'publicBattles', 'replay', 'noCapturePly'];
 function rosterSignature(room) { return JSON.stringify(room.players.map(p => [p.seat, p.username, p.name])); }
 function undoBoardSignature(room) { return JSON.stringify([room.pieces, room.turn, room.eliminationOrder, room.players.map(p => !!p.eliminated)]); }
 function undoHasCasualty(room) {
@@ -1319,7 +1325,9 @@ function applyMove(room, player, from, to) {
       room.publicBattles.push({ attacker: attacker.id, defender: defender.id, outcome });
     }
     room.ply = (room.ply || 0) + 1;
-    room.lastMove = { from, to, path: route, pieceId: outcome === "defender" || outcome === "both" ? null : attacker.id };
+    room.lastMove = { from, to, path: route, pieceId: outcome === "defender" || outcome === "both" ? null : attacker.id, seat: player.seat, ply: room.ply };
+    room.moveTrails ||= {};
+    room.moveTrails[player.seat] = {...room.lastMove};
     let message = `${SEAT_NAMES[attacker.owner]}移动了一枚棋子`;
     if (outcome === "move") {
       attacker.position = to;
@@ -1510,6 +1518,7 @@ io.on("connection", (socket) => {
       turn: null,
       winner: null,
       lastMove: null,
+      moveTrails: {},
       eliminationOrder: [],
       ratingSettled: false,
       ratedParticipants: null,
@@ -1835,6 +1844,7 @@ io.on("connection", (socket) => {
     room.rated=!!room.ratingPool;
     room.turn = room.activeSeats[0];
     room.lastMove = null;
+    room.moveTrails = {};
     room.replay = { version: 1, code: room.code, startedAt: Date.now(), frames: [], logs: [] };
     room.eliminationOrder = [];
     room.ratedParticipants = room.rated ? room.players.map((item) => ({
