@@ -604,7 +604,7 @@ function renderPlayers() {
     const delta = change ? `<span class="rating-delta ${change.delta >= 0 ? "up" : "down"}">${change.delta >= 0 ? "+" : ""}${change.delta}</span>` : "";
     const signature=player.empty?'':(player.signature||'').replace(/[#*_`$<>\[\]]/g,'').replace(/\s+/g,' ').slice(0,48);
     card.innerHTML = `<div class="seat-badge">${seatShort[player.seat]}</div><div class="player-info"><div class="player-name">${player.empty ? "空座" : escapeHtml(player.name)}${me}</div><div class="player-status">${boardMeta?.seatNames[player.seat] || player.seat}${host}</div>${rating}${signature?`<div class="signature-snippet" title="${escapeHtml(player.signature||'')}">${escapeHtml(signature)}</div>`:''}</div><div class="player-state">${playerStatus(player)}${delta}</div>`;
-    if(!player.empty){const old=card.querySelector('.player-name'),link=document.createElement('a');link.href='/profile/'+encodeURIComponent(player.name);link.textContent=player.name;colorRating(link,player.rating??1500);old.replaceChildren(link,document.createTextNode(me));}
+    if(!player.empty){const old=card.querySelector('.player-name'),link=document.createElement('a');link.href='/profile/'+encodeURIComponent(player.username||player.name);link.textContent=player.name;colorRating(link,player.rating??1500);old.replaceChildren(link,document.createTextNode(me));}
     if (!player.empty) colorRating(card.querySelector('.player-name'), player.rating ?? 1500);
     if (canModerateKick(player) && !player.empty) card.append(kickButton(player));
     list.append(card);

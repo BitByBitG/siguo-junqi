@@ -118,6 +118,12 @@ h2,h3,h4 { color:var(--ink); }
 .rating-chart { width:100%; border:1px solid var(--line); background:#2d333b; }
 .rating-chart svg { width:100%; display:block; }
 .rating-chart circle:focus { outline:2px solid #e8e0cf; }
+.rating-chart { position:relative; }
+.rating-chart svg { cursor:pointer; touch-action:pan-y; user-select:none; }
+.rating-chart.is-active { outline:2px solid #4b8eda; outline-offset:2px; }
+.rating-chart.is-active svg { cursor:grab; }
+.rating-chart.is-dragging svg { cursor:grabbing; }
+.rating-chart-hint { margin:0; padding:5px 10px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }
 .document-download { display:inline-block; border:1px solid var(--line); padding:6px 12px; background:#2d333b; border-radius:3px; }
 .profile-tabs a,.admin-directory a { font-size:14px; }
 .chat-meta { flex-wrap:wrap; align-items:center; gap:8px; }

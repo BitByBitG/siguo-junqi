@@ -980,6 +980,7 @@ function serializeRoom(room, viewer) {
       return player ? {
         seat,
         name: player.name,
+        username: player.username || player.name,
         ...accountProfile(player.username || player.name),
         isBot: !!player.isBot,
         botTurnLimitMs:player.isBot?(accounts[player.username]?.botTurnLimitMs||5000):null,
