@@ -43,8 +43,8 @@ export function installHostedBots({ app, accounts, sessions, server, filename })
     for (const [jobKey, job] of jobs) if (jobKey.startsWith(username + '\u0000')) { job.cancelled = true; job.cancel?.(); }
     for (const [tokenKey, token] of tokens) if (tokenKey.startsWith(username + '\u0000')) { sessions.delete(token); tokens.delete(tokenKey); }
   }
-  const enabled = username => !!programs[username]?.enabled && !accounts[username]?.blocked;
-  const hosted = (username, assignmentId) => enabled(username) && !!assignmentId;
+  const enabled = username => !!programs[username]?.enabled && !accounts[username]?.blocked && !accounts[username]?.botServerHostingDisabled;
+  const hosted = (username, assignmentId) => enabled(username) && (assignmentId === undefined || !!assignmentId);
   function run(source, state, validate, budgetMs, job = {}) {
     if (workers >= maxWorkers) return Promise.reject(new Error('计算资源繁忙，请稍后重试'));
     workers++;
@@ -71,9 +71,10 @@ export function installHostedBots({ app, accounts, sessions, server, filename })
   }
   app.get('/api/program', auth, (req, res) => {
     const rows = [...status.entries()].filter(([k]) => k.startsWith(req.username + '\u0000')).map(([k, value]) => ({ assignmentId: k.slice(req.username.length + 1), ...value }));
-    res.json({ source: programs[req.username]?.source || '', enabled: enabled(req.username), assignments: rows, ...(status.get(key(req.username)) || {}) });
+    res.json({ source: programs[req.username]?.source || '', enabled: enabled(req.username), serverHostingAllowed:!accounts[req.username]?.botServerHostingDisabled, assignments: rows, ...(status.get(key(req.username)) || {}) });
   });
   app.put('/api/program', auth, async (req, res) => {
+    if(accounts[req.username]?.botServerHostingDisabled)return res.status(403).json({error:'管理员已禁止此 BOT 使用服务器托管'});
     const source = req.body?.source;
     if (typeof source !== 'string' || !source.trim() || Buffer.byteLength(source) > 1024 * 1024) return res.status(400).json({ error: '程序不能为空，最大 1 MiB' });
     const account = accounts[req.username];
@@ -88,6 +89,7 @@ export function installHostedBots({ app, accounts, sessions, server, filename })
   });
   app.post('/api/program/run', auth, async (req, res) => {
     if (typeof req.body?.enabled !== 'boolean') return res.status(400).json({ error: 'enabled 必须为布尔值' });
+    if(req.body.enabled&&accounts[req.username]?.botServerHostingDisabled)return res.status(403).json({error:'管理员已禁止此 BOT 使用服务器托管'});
     const program = programs[req.username]; if (!program) return res.status(400).json({ error: '请先保存程序' });
     stop(req.username); program.enabled = req.body.enabled; await save.flush();
     status.set(key(req.username), { message: program.enabled ? '已启动，等待房主分配位置' : '已停止', updatedAt: Date.now() });
@@ -147,9 +149,9 @@ export function installHostedBots({ app, accounts, sessions, server, filename })
     finally { if(jobs.get(scanKey)===scanJob) jobs.delete(scanKey); }
   }
   const timer = setInterval(() => {
-    for (const [username, program] of Object.entries(programs)) if (program.enabled && accounts[username]?.type === 'bot') scan(username, program);
+    for (const [username, program] of Object.entries(programs)) if (enabled(username) && accounts[username]?.type === 'bot') scan(username, program);
   }, 200);
   timer.unref();
   server.once('close', () => {clearInterval(timer);for(const username of Object.keys(programs))stop(username);});
-  return { enabled, hosted, remove(username) { stop(username); delete programs[username]; for (const k of status.keys()) if (k.startsWith(username + '\u0000')) status.delete(k); return save.flush(); }, flushSave: () => save.flush() };
+  return { enabled, hosted, refreshAccount(username){if(!enabled(username))stop(username);}, remove(username) { stop(username); delete programs[username]; for (const k of status.keys()) if (k.startsWith(username + '\u0000')) status.delete(k); return save.flush(); }, flushSave: () => save.flush() };
 }

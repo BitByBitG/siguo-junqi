@@ -231,6 +231,7 @@ function normalizeAccount(account) {
   if (!Number.isInteger(account.roomCreateCount) || account.roomCreateCount < 0) account.roomCreateCount = 0;
   if (typeof account.signature !== 'string') account.signature = '';
   if (account.type === 'bot' && (!Number.isInteger(account.botTurnLimitMs) || account.botTurnLimitMs < 1000 || account.botTurnLimitMs > 120000)) account.botTurnLimitMs = 5000;
+  if(account.type==='bot'&&typeof account.botServerHostingDisabled!=='boolean')account.botServerHostingDisabled=false;
   return account;
 }
 
@@ -239,7 +240,7 @@ function accountProfile(username) {
   if (!account) return { rating: INITIAL_RATING, ratedGames: 0, peakRating: INITIAL_RATING, ...ratingRank(INITIAL_RATING) };
   normalizeAccount(account);
   const info = ratingRank(account.rating);
-  return { blocked:!!account.blocked, globallyMuted:globalBans.includes(username), avatar: account.avatar?.id || null, signature:account.signature||'', accountType: account.type || "human", admin: !!account.admin, rating: account.rating, ratedGames: account.ratedGames, peakRating: account.peakRating, rank: info.rank, rankClass: info.rankClass, groupId:account.groupId||'default', groupName:groupData.groups[account.groupId||'default']?.name||'默认分组', botTurnLimitMs:account.type==='bot'?account.botTurnLimitMs:null };
+  return { blocked:!!account.blocked, globallyMuted:globalBans.includes(username), avatar: account.avatar?.id || null, signature:account.signature||'', accountType: account.type || "human", admin: !!account.admin, rating: account.rating, ratedGames: account.ratedGames, peakRating: account.peakRating, rank: info.rank, rankClass: info.rankClass, groupId:account.groupId||'default', groupName:groupData.groups[account.groupId||'default']?.name||'默认分组', botTurnLimitMs:account.type==='bot'?account.botTurnLimitMs:null, botServerHostingDisabled:account.type==='bot'?!!account.botServerHostingDisabled:null };
 }
 
 function loadAccounts() {
@@ -687,7 +688,8 @@ app.post("/api/logout", (req, res) => {
 });
 app.get("/api/admin/accounts", (request, response) => {
   const names = Object.keys(accounts).filter(name => accounts[name].status !== "pending").sort();
-  response.json(request.query.details === "1" ? names.map(username => ({ username, ...accountProfile(username) })) : names);
+  const botStates=new Map(botAPI.directory().map(item=>[item.username,item]));
+  response.json(request.query.details === "1" ? names.map(username => ({ username, ...accountProfile(username), ...(botStates.get(username)||{}) })) : names);
 });
 app.get('/api/admin/online', (_req, res) => {
   const users = new Map();
@@ -748,6 +750,7 @@ app.patch('/api/admin/accounts/:username/block',async(req,res)=>{
   if(account.admin&&!adminKeyMatches(req))return res.status(403).json({error:'封禁管理员需要管理密钥'});
   const previous=account.blocked;account.blocked=req.body.blocked;
   try{await saveAccounts.flush();}catch(error){account.blocked=previous;throw error;}
+  if(account.type==='bot'){hosted.refreshAccount(username);botAPI.refreshAccount(username);}
   if(account.blocked)for(const room of rooms.values()){
     if(room.phase!=='playing'||!room.players.some(p=>p.username===username&&!p.eliminated))continue;
     const wasTurn=room.players.some(p=>p.username===username&&p.seat===room.turn);
@@ -781,6 +784,15 @@ app.patch('/api/admin/accounts/:username/bot-time-limit',async(request,response)
   const seconds=Number(request.body?.seconds),milliseconds=Math.round(seconds*1000);
   if(!Number.isFinite(seconds)||seconds<1||seconds>120)return response.status(400).json({error:'BOT 时限须为 1～120 秒'});
   account.botTurnLimitMs=milliseconds;await saveAccounts.flush();botAPI.refreshAccount(username);
+  response.json({username,...accountProfile(username)});
+});
+
+app.patch('/api/admin/accounts/:username/bot-server-hosting',async(request,response)=>{
+  const username=canonicalUsername(request.params.username),account=accounts[username];
+  if(!account||account.status==='pending')return response.status(404).json({error:'账号不存在'});
+  if(account.type!=='bot')return response.status(400).json({error:'只有 BOT 账号可以设置服务器托管权限'});
+  if(typeof request.body?.disabled!=='boolean')return response.status(400).json({error:'disabled 必须为布尔值'});
+  account.botServerHostingDisabled=request.body.disabled;await saveAccounts.flush();hosted.refreshAccount(username);
   response.json({username,...accountProfile(username)});
 });
 

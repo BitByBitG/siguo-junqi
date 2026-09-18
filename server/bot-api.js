@@ -3,6 +3,7 @@ import { BOARD, PIECE_INFO, publicBoard, createArmy, validateSetup, validateMove
 
 export function installBotApi({ app, rooms, accounts, sessions, emitRoom, addLog, applyMove, eliminate, checkWinner, advanceTurn, voteDraw, isHosted = () => false }) {
   const presence = new Map();
+  const externalPresence = new Map(), hostedPresence = new Map();
   const turnLimitMs = username => {
     const value=accounts[username]?.botTurnLimitMs;
     return Number.isInteger(value)&&value>=1000&&value<=120000?value:5000;
@@ -17,8 +18,9 @@ export function installBotApi({ app, rooms, accounts, sessions, emitRoom, addLog
   const findAssignment = (username, assignmentId) => findAssignments(username)
     .find(item => !assignmentId || item.player.token === assignmentId) || null;
   const directory = () => Object.keys(accounts).filter(name => accounts[name].type === 'bot' && accounts[name].status !== 'pending')
-    .sort().map(username => ({ username, rating: accounts[username].rating ?? 1500, online: Date.now() - (presence.get(username) || 0) < 15000,
-      seats: findAssignments(username).length, turnLimitMs:turnLimitMs(username) }));
+    .sort().map(username => {const externalOnline=Date.now()-(externalPresence.get(username)||0)<15000,serverOnline=Date.now()-(hostedPresence.get(username)||0)<15000,serverHosted=isHosted(username);return { username, rating: accounts[username].rating ?? 1500, online:externalOnline||serverOnline,
+      externalOnline,serverOnline,serverHosted,runtimeMode:serverHosted?(externalOnline?'mixed':'server'):externalOnline?'external':'offline',serverHostingDisabled:!!accounts[username].botServerHostingDisabled,
+      seats: findAssignments(username).length, turnLimitMs:turnLimitMs(username) };});
 
   function attach(room, seat, username) {
     if (!accounts[username] || accounts[username].blocked || accounts[username].type !== 'bot' || accounts[username].status === 'pending') return '请选择未封禁且已审核的 BOT 账号';
@@ -72,11 +74,13 @@ export function installBotApi({ app, rooms, accounts, sessions, emitRoom, addLog
     const session = sessions.get(token);
     if (!session || session.expiresAt < Date.now() || !accounts[session.username] || accounts[session.username].status === 'pending') return res.status(401).json({ error: '认证已失效' });
     if (accounts[session.username].type !== 'bot') return res.status(403).json({ error: '仅 BOT 账号可使用此接口' });
+    if(accounts[session.username].blocked)return res.status(403).json({error:'BOT 账号已封禁'});
     req.botUsername = session.username;
     req.botAssignmentId = session.assignmentId || null;
     req.hosted = !!session.hosted;
     const wasOnline = Date.now() - (presence.get(session.username) || 0) < 15000;
     presence.set(session.username, Date.now());
+    (req.hosted?hostedPresence:externalPresence).set(session.username,Date.now());
     if (!wasOnline) for (const assigned of findAssignments(session.username)) emitRoom(assigned.room);
     next();
   });

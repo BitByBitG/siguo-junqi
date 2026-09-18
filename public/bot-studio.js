@@ -14,6 +14,8 @@ async function refresh(initial = false) {
   const data = await api('/api/program');
   if (initial) $('#source').value = data.source || 'function act(state) {\n  if (state.phase === "setup") return { action: "ready", ready: true };\n  return { action: "move", ...state.legalMoves[0] };\n}\n';
   $('#running').textContent = data.enabled ? '● 托管运行中' : '○ 已停止';
+  if(data.serverHostingAllowed===false)$('#running').textContent='× 管理员已禁止服务器托管';
+  $('#save').disabled=data.serverHostingAllowed===false;$('#start').disabled=data.serverHostingAllowed===false;
   message(data.message || '粘贴自己的程序，然后保存并启动。');
 }
 async function action(fn) {
