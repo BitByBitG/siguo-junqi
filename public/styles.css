@@ -586,5 +586,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .image-card small { display:block; white-space:pre-wrap; overflow-wrap:anywhere; margin:.65rem 0; }
 .brand-icon { width:42px; height:42px; object-fit:contain; border-radius:6px; }
 .admin-shell .danger-text { color:#df8f8f; }
+.registration-notice{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:18px 0;padding:16px 18px;border:2px solid #d46b6b;background:rgba(180,45,45,.13);color:var(--text-primary)}
+.registration-notice strong{font-size:1.08rem;line-height:1.7}
+.registration-notice .primary-button{flex:none;text-decoration:none}
+@media(max-width:720px){.registration-notice{align-items:stretch;flex-direction:column}.registration-notice .primary-button{text-align:center}}
 @media(max-width:650px) { .admin-shell { border-radius:8px; } .account-row > span { flex-basis:100%; } }
 .signature-snippet{max-width:260px;max-height:3.1em;overflow:hidden;color:var(--muted);font-size:12px;line-height:1.45}.signature-snippet>*{display:inline;margin:0}.signature-snippet .katex-display{display:inline;margin:0}.profile-signature{min-height:2em;padding:12px;border:1px solid var(--line);background:#2d333b}.muted-user{display:inline-flex;align-items:center;gap:4px;padding:2px 4px;border:1px solid var(--line);border-radius:4px}

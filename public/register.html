@@ -1,1 +1,18 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>申请注册 · 四国军棋</title><link rel="stylesheet" href="/styles.css"><link rel="icon" type="image/png" href="/favicon.png?v=240"><link rel="apple-touch-icon" href="/favicon.png?v=240"><link rel="stylesheet" href="/cf-layout.css"></head><body class="admin-page"><script type="module" src="/site-shell.js"></script><main class="admin-shell"><h1>申请注册</h1><p>申请通过后才能登录。</p><form id="credential-form" class="admin-form"><label><span>账号</span><input name="username" class="text-input" type="text" autocomplete="username" required minlength="2" maxlength="16"></label><label><span>账号类型</span><select name="accountType" class="text-input"><option value="human">玩家账号</option><option value="bot">BOT 账号（程序参赛）</option></select></label><label><span>密码</span><input name="password" class="text-input" type="password" autocomplete="new-password" required minlength="6" maxlength="64"></label><label><span>确认密码</span><input name="confirm" class="text-input" type="password" autocomplete="new-password" required minlength="6" maxlength="64"></label><button type="submit" class="primary-button">申请注册</button></form><p id="result" role="status"></p></main><script type="module" src="/credentials.js"></script><script type="module" src="/user-colors.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>申请注册 · 四国军棋</title><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/cf-layout.css"><link rel="icon" href="/favicon.png?v=240"></head>
+<body class="admin-page"><script type="module" src="/site-shell.js"></script>
+<main class="admin-shell">
+  <h1>申请注册</h1>
+  <aside class="registration-notice" role="note"><strong>提交申请后，请务必私信洛谷 BitByBit 说明申请注册，否则不予通过。</strong><a class="primary-button" href="https://www.luogu.com.cn/chat?uid=1659487" target="_blank" rel="noopener">私信 BitByBit - 洛谷</a></aside>
+  <form id="credential-form" class="admin-form">
+    <label><span>账号</span><input name="username" class="text-input" type="text" autocomplete="username" required minlength="2" maxlength="16"></label>
+    <label><span>账号类型</span><select name="accountType" class="text-input"><option value="human">玩家账号</option><option value="bot">BOT 账号（程序参赛）</option></select></label>
+    <label><span>密码</span><input name="password" class="text-input" type="password" autocomplete="new-password" required minlength="6" maxlength="64"></label>
+    <label><span>确认密码</span><input name="confirm" class="text-input" type="password" autocomplete="new-password" required minlength="6" maxlength="64"></label>
+    <button type="submit" class="primary-button">申请注册</button>
+  </form>
+  <p id="result" role="status"></p>
+</main>
+<script type="module" src="/credentials.js"></script><script type="module" src="/user-colors.js"></script>
+</body></html>

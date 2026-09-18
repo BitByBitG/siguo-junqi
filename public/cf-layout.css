@@ -124,6 +124,8 @@ h2,h3,h4 { color:var(--ink); }
 .rating-chart.is-active svg { cursor:grab; }
 .rating-chart.is-dragging svg { cursor:grabbing; }
 .rating-chart-hint { margin:0; padding:5px 10px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }
+.account-type-section { margin:12px 0 20px; padding:10px; border:1px solid var(--line); }
+.account-type-section > .admin-batch-toolbar { margin:0 0 10px; }
 .document-download { display:inline-block; border:1px solid var(--line); padding:6px 12px; background:#2d333b; border-radius:3px; }
 .profile-tabs a,.admin-directory a { font-size:14px; }
 .chat-meta { flex-wrap:wrap; align-items:center; gap:8px; }

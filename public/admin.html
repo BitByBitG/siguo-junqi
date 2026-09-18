@@ -19,11 +19,8 @@
       <p id="admin-result" role="status"></p>
       <section><h2>在线用户 <span id="online-count"></span></h2><button id="refresh-online" type="button">刷新在线状态</button><small>每 10 秒更新；关闭独立页面后最多 45 秒转为离线。</small><div id="online-users" class="online-users">验证管理员身份后显示</div></section>
       <section><h2>图床管理</h2><div class="studio-toolbar"><button id="refresh-images" type="button">加载 / 刷新图片</button><button id="images-select-all" type="button">全选</button><button id="images-delete-selected" type="button">删除所选</button><span id="image-usage"></span></div><div id="image-gallery" class="image-gallery"></div></section>
-      <section aria-labelledby="accounts-title">
-        <h2 id="accounts-title">账号列表</h2>
-        <button id="refresh-accounts" class="secondary-button" type="button">加载 / 刷新列表</button>
-        <div id="account-list" class="account-list">输入管理密钥后加载列表</div>
-      </section>
+      <section aria-labelledby="human-accounts-title"><h2 id="human-accounts-title">人类账号</h2><button id="refresh-human-accounts" class="secondary-button" type="button">加载 / 刷新</button><div id="human-account-list" class="account-list">输入管理密钥后加载列表</div></section>
+      <section aria-labelledby="bot-accounts-title"><h2 id="bot-accounts-title">BOT 账号</h2><button id="refresh-bot-accounts" class="secondary-button" type="button">加载 / 刷新</button><div id="bot-account-list" class="account-list">输入管理密钥后加载列表</div></section>
       <section><h2>注册申请</h2><button id="refresh-requests" class="secondary-button" type="button">加载 / 刷新申请</button><div id="request-list" class="account-list">输入管理密钥后加载申请</div></section>
       <section><h2>所有房间</h2><button id="refresh-rooms" type="button" class="secondary-button">加载 / 刷新房间</button><div id="admin-rooms"></div></section>
       <section><h2>聊天管理</h2><select id="admin-chat-scope"><option value="">首页聊天</option></select><button id="refresh-chat" type="button">加载 / 刷新</button><button id="chat-select-all" type="button">全选</button><button id="chat-delete-selected" type="button">删除所选</button><input id="mute-username" placeholder="要禁言的完整用户名" /><button id="mute-chat-user" type="button">禁言</button><div id="chat-mutes"></div><div id="admin-chat"></div></section>
@@ -44,7 +41,7 @@
       const form = document.querySelector("#account-form");
       const result = document.querySelector("#admin-result");
 
-      const list = document.querySelector("#account-list");
+      const humanList=document.querySelector('#human-account-list'),botList=document.querySelector('#bot-account-list');
       const headers = () => ({ "content-type": "application/json", "x-admin-key": document.querySelector("#admin-key").value, Authorization:'Bearer '+(JSON.parse(localStorage.getItem('junqi-auth')||'null')?.token||'') });
       document.querySelector('#admin-key').required=false;
       const directory=document.querySelector('#admin-directory');
@@ -175,7 +172,7 @@
             const actions=document.createElement('div');actions.className='group-admin-actions';actions.append(save,del);
             options.append(lc,lp,li,quota,keepLabel,actions);row.append(head,options);box.append(row);
           }
-          if(document.querySelector('#account-list .account-row'))await loadAccounts();
+          if(document.querySelector('#human-account-list .account-row,#bot-account-list .account-row'))await loadAccounts();
           status.textContent='已刷新';
         }catch(e){status.textContent='刷新失败：'+e.message;result.textContent=e.message;}
       }
@@ -223,16 +220,16 @@
       let accountLoad=0;
       async function loadAccounts() {
         const version=++accountLoad;
-        list.textContent = "加载中…";
+        humanList.textContent=botList.textContent="加载中…";
         try {
           const accounts = await request('/api/admin/accounts?details=1');
           if(version!==accountLoad)return;
-          list.replaceChildren();
-          if (!accounts.length) list.textContent = "暂无账号";
+          humanList.replaceChildren();botList.replaceChildren();
+          if (!accounts.some(x=>x.accountType!=='bot')) humanList.textContent='暂无人类账号';
+          if (!accounts.some(x=>x.accountType==='bot')) botList.textContent='暂无 BOT 账号';
           const ordered=[...accounts].sort((a,b)=>(a.accountType==='bot')-(b.accountType==='bot')||a.username.localeCompare(b.username,'zh-CN'));
-          let sectionType=null;
+          const humanSection=humanList,botSection=botList;
           for (const account of ordered) {
-            if(account.accountType!==sectionType){sectionType=account.accountType;const heading=document.createElement('h3');heading.className='account-type-heading';heading.textContent=sectionType==='bot'?`BOT 账号（${ordered.filter(x=>x.accountType==='bot').length}）`:`人类账号（${ordered.filter(x=>x.accountType!=='bot').length}）`;list.append(heading);}
             const username = account.username;
             const row = document.createElement("div");
             row.className = `account-row ${account.accountType==='bot'?'bot-account':'human-account'}`;
@@ -276,11 +273,10 @@
               };
               row.append(name, ratingInput, saveRating, adminButton, button);
             } else {
-              const limitInput=document.createElement('input');limitInput.className='bot-time-input';limitInput.type='number';limitInput.min='1';limitInput.max='120';limitInput.step='.1';limitInput.value=String((account.botTurnLimitMs||5000)/1000);limitInput.setAttribute('aria-label',`${username} 走棋时限（秒）`);
-              const saveLimit=document.createElement('button');saveLimit.type='button';saveLimit.className='icon-button';saveLimit.textContent='改时限';saveLimit.onclick=async()=>{try{const updated=await request('/api/admin/accounts/'+encodeURIComponent(username)+'/bot-time-limit',{method:'PATCH',body:JSON.stringify({seconds:Number(limitInput.value)})});result.textContent=`${username} 的走棋时限已改为 ${updated.botTurnLimitMs/1000} 秒`;await loadAccounts();}catch(error){result.textContent=error.message;}};
-              const limitLabel=document.createElement('span');limitLabel.className='bot-time-control';limitLabel.append(document.createTextNode('时限 '),limitInput,document.createTextNode(' 秒'));
+              const makeLimit=(label,kind,value)=>{const input=document.createElement('input');input.className='bot-time-input';input.type='number';input.min='1';input.max='120';input.step='.1';input.value=String((value||5000)/1000);input.setAttribute('aria-label',`${username} ${label}（秒）`);const save=document.createElement('button');save.type='button';save.className='icon-button';save.textContent='修改';save.onclick=async()=>{try{await request('/api/admin/accounts/'+encodeURIComponent(username)+'/bot-time-limit',{method:'PATCH',body:JSON.stringify({kind,seconds:Number(input.value)})});result.textContent=`${username} 的${label}已修改`;await loadAccounts();}catch(error){result.textContent=error.message;}};const wrap=document.createElement('span');wrap.className='bot-time-control';wrap.append(document.createTextNode(label+' '),input,document.createTextNode(' 秒'),save);return wrap;};
+              const localLimit=makeLimit('本地时限','local',account.botLocalTurnLimitMs),serverLimit=makeLimit('服务器时限','server',account.botServerTurnLimitMs);
               const hosting=document.createElement('button');hosting.type='button';hosting.className='icon-button';hosting.textContent=account.botServerHostingDisabled?'允许服务器托管':'禁止服务器托管';hosting.onclick=async()=>{try{await request('/api/admin/accounts/'+encodeURIComponent(username)+'/bot-server-hosting',{method:'PATCH',body:JSON.stringify({disabled:!account.botServerHostingDisabled})});await loadAccounts();}catch(error){result.textContent=error.message;}};
-              row.append(name, ratingInput, saveRating, limitLabel, saveLimit, hosting, button);
+              row.append(name, ratingInput, saveRating, localLimit, serverLimit, hosting, button);
             }
             const block=document.createElement('button');block.className='icon-button';block.textContent=account.blocked?'解封':'封禁';block.onclick=async()=>{try{await request('/api/admin/accounts/'+encodeURIComponent(username)+'/block',{method:'PATCH',body:JSON.stringify({blocked:!account.blocked})});await loadAccounts();}catch(e){result.textContent=e.message;}};row.append(block);
             const mute=document.createElement('button');mute.className='icon-button';mute.textContent=account.globallyMuted?'解除全站禁言':'全站禁言';mute.onclick=async()=>{try{await request('/api/admin/chat',{method:'POST',body:JSON.stringify({action:account.globallyMuted?'unban':'ban',username})});await loadAccounts();}catch(e){result.textContent=e.message;}};row.append(mute);
@@ -290,17 +286,14 @@
               row.append(groupSelect,groupSave);
             }
             const actions=document.createElement('div');actions.className='account-edit-actions';for(const child of [...row.children].slice(1))actions.append(child);row.append(actions);
-            addSelection(row,username);list.append(row);
+            addSelection(row,username);(account.accountType==='bot'?botSection:humanSection).append(row);
           }
-          installBatch(list,[
-            {text:'删除',danger:true,run:username=>request('/api/admin/accounts/'+encodeURIComponent(username),{method:'DELETE'})},
-            ...[true,false].map(blocked=>({text:blocked?'封禁':'解封',run:username=>request('/api/admin/accounts/'+encodeURIComponent(username)+'/block',{method:'PATCH',body:JSON.stringify({blocked})})})),
-            ...['ban','unban'].map(action=>({text:action==='ban'?'全站禁言':'解除全站禁言',run:username=>request('/api/admin/chat',{method:'POST',body:JSON.stringify({action,username})})}))
-          ],loadAccounts,result);
-          const batchBar=list.querySelector('.admin-batch-toolbar');
-          if(batchBar){const limit=document.createElement('input');limit.className='bot-time-input';limit.type='number';limit.min='1';limit.max='120';limit.step='.1';limit.value='5';limit.setAttribute('aria-label','批量 BOT 走棋时限（秒）');const setLimit=document.createElement('button');setLimit.type='button';setLimit.textContent='所选 BOT 改时限';setLimit.onclick=async()=>{const usernames=[...list.querySelectorAll('.admin-pick:checked')].map(x=>x.value),bots=usernames.filter(name=>accounts.find(x=>x.username===name)?.accountType==='bot');if(!bots.length){result.textContent='请至少选择一个 BOT 账号';return;}if(bots.length!==usernames.length&&!confirm(`所选账号中有 ${usernames.length-bots.length} 个人类账号，将只修改 ${bots.length} 个 BOT，是否继续？`))return;let failed=[];for(const username of bots)try{await request('/api/admin/accounts/'+encodeURIComponent(username)+'/bot-time-limit',{method:'PATCH',body:JSON.stringify({seconds:Number(limit.value)})});}catch(error){failed.push(`${username}：${error.message}`);}result.textContent=`批量修改 BOT 时限：成功 ${bots.length-failed.length}，失败 ${failed.length}${failed.length?'；'+failed.join('；'):''}`;await loadAccounts();};const wrap=document.createElement('span');wrap.className='bot-time-control';wrap.append(document.createTextNode('BOT 时限 '),limit,document.createTextNode(' 秒'));batchBar.append(wrap,setLimit);}
-          if(batchBar&&adminGroups.length){const target=document.createElement('select');target.className='account-group-select';for(const group of adminGroups)target.add(new Option(group.name,group.id));const move=document.createElement('button');move.textContent='所选改分组';move.onclick=async()=>{const usernames=[...list.querySelectorAll('.admin-pick:checked')].map(x=>x.value);if(!usernames.length)return;if(!confirm(`将所选 ${usernames.length} 个账号移至“${target.selectedOptions[0]?.textContent}”？`))return;try{await request('/api/admin/group-members',{method:'PATCH',body:JSON.stringify({usernames,groupId:target.value})});await loadAccounts();}catch(e){result.textContent=e.message;}};batchBar.append(target,move);}
-        } catch (error) { list.textContent = error.message; }
+          const commonActions=[true,false].map(blocked=>({text:blocked?'封禁':'解封',run:username=>request('/api/admin/accounts/'+encodeURIComponent(username)+'/block',{method:'PATCH',body:JSON.stringify({blocked})})}));
+          installBatch(humanSection,commonActions,loadAccounts,result);installBatch(botSection,commonActions,loadAccounts,result);
+          const humanBatch=humanSection.querySelector('.admin-batch-toolbar'),botBatch=botSection.querySelector('.admin-batch-toolbar');
+          if(humanBatch&&adminGroups.length){const target=document.createElement('select');target.className='account-group-select';for(const group of adminGroups)target.add(new Option(group.name,group.id));const move=document.createElement('button');move.textContent='所选改分组';move.onclick=async()=>{const usernames=[...humanSection.querySelectorAll('.admin-pick:checked')].map(x=>x.value);if(!usernames.length)return;if(!confirm(`将所选 ${usernames.length} 个账号移至“${target.selectedOptions[0]?.textContent}”？`))return;try{await request('/api/admin/group-members',{method:'PATCH',body:JSON.stringify({usernames,groupId:target.value})});await loadAccounts();}catch(e){result.textContent=e.message;}};humanBatch.append(target,move);}
+          if(botBatch){const addBatchLimit=(label,kind)=>{const input=document.createElement('input');input.className='bot-time-input';input.type='number';input.min='1';input.max='120';input.step='.1';input.value='5';input.setAttribute('aria-label',`批量 BOT ${label}（秒）`);const button=document.createElement('button');button.type='button';button.textContent=`所选改${label}`;button.onclick=async()=>{const usernames=[...botSection.querySelectorAll('.admin-pick:checked')].map(x=>x.value);if(!usernames.length)return;let failed=[];for(const username of usernames)try{await request('/api/admin/accounts/'+encodeURIComponent(username)+'/bot-time-limit',{method:'PATCH',body:JSON.stringify({kind,seconds:Number(input.value)})});}catch(error){failed.push(`${username}：${error.message}`);}result.textContent=`批量修改${label}：成功 ${usernames.length-failed.length}，失败 ${failed.length}${failed.length?'；'+failed.join('；'):''}`;await loadAccounts();};const wrap=document.createElement('span');wrap.className='bot-time-control';wrap.append(document.createTextNode(label+' '),input,document.createTextNode(' 秒'),button);botBatch.append(wrap);};addBatchLimit('本地时限','local');addBatchLimit('服务器时限','server');}
+        } catch (error) { humanList.textContent=botList.textContent=error.message; }
       }
       async function loadRequests() {
         const target = document.querySelector("#request-list");
@@ -327,7 +320,7 @@
       }
       document.querySelector("#refresh-requests").onclick = loadRequests;
       document.querySelector("#admin-key").addEventListener("change", loadRequests);
-      document.querySelector("#refresh-accounts").onclick = loadAccounts;
+      document.querySelector('#refresh-human-accounts').onclick=document.querySelector('#refresh-bot-accounts').onclick=loadAccounts;
       document.querySelector("#admin-key").addEventListener("change", loadAccounts);
       form.addEventListener("submit", async (event) => {
         event.preventDefault();

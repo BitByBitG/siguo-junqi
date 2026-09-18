@@ -4,12 +4,13 @@ const b64=bytes=>{let text='';for(let i=0;i<bytes.length;i+=32768)text+=String.f
 const bytes=text=>Uint8Array.from(atob(text),c=>c.charCodeAt(0));
 const nativeFetch=window.fetch.bind(window);
 let pending;
+async function responseJson(response,source){const text=await response.text();try{return JSON.parse(text);}catch{const html=/^\s*</.test(text);throw Error(`${source}返回了${html?'网页':'无效数据'}（HTTP ${response.status}），请确认 Node 服务仍在运行并检查 Cloudflare Tunnel`);}}
 async function channel(){
   if(!pending)pending=(async()=>{
     if(!crypto.subtle)throw Error('加密功能需要 HTTPS 或 localhost，请使用 HTTPS 域名访问');
     const pair=await crypto.subtle.generateKey({name:'RSA-OAEP',modulusLength:3072,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},false,['encrypt','decrypt']);
     const response=await nativeFetch('/api/crypto',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({publicKey:await crypto.subtle.exportKey('jwk',pair.publicKey)})});
-    const info=await response.json();if(!response.ok)throw Error(info.error);
+    const info=await responseJson(response,'加密连接接口');if(!response.ok)throw Error(info.error);
     const raw=await crypto.subtle.decrypt({name:'RSA-OAEP'},pair.privateKey,bytes(info.key));
     return {id:info.id,key:await crypto.subtle.importKey('raw',raw,'AES-GCM',false,['encrypt','decrypt'])};
   })().catch(error=>{pending=null;throw error;});
@@ -33,7 +34,7 @@ export async function secureFetch(url,options={},retry=true){
   const headers=new Headers(options.headers),body=options.body?JSON.parse(options.body):undefined;
   const packet=await seal({kind:'http',url:target.pathname+target.search,method:options.method||'GET',body,authorization:headers.get('Authorization'),adminKey:headers.get('x-admin-key')});
   const response=await nativeFetch('/api/secure',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(packet),signal:options.signal});
-  const data=await response.json();if(!data.iv){pending=null;if(retry&&response.status===400)return secureFetch(url,options,false);throw Error(data.error||'加密连接错误，请刷新');}
+  const data=await responseJson(response,'加密请求接口');if(!data.iv){pending=null;if(retry&&response.status===400)return secureFetch(url,options,false);throw Error(data.error||'加密连接错误，请刷新');}
   return new Response(JSON.stringify(await open(data)),{status:response.status,headers:{'Content-Type':'application/json'}});
 }
 window.fetch=secureFetch;

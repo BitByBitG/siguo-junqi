@@ -4,8 +4,8 @@ import { BOARD, PIECE_INFO, publicBoard, createArmy, validateSetup, validateMove
 export function installBotApi({ app, rooms, accounts, sessions, emitRoom, addLog, applyMove, eliminate, checkWinner, advanceTurn, voteDraw, isHosted = () => false }) {
   const presence = new Map();
   const externalPresence = new Map(), hostedPresence = new Map();
-  const turnLimitMs = username => {
-    const value=accounts[username]?.botTurnLimitMs;
+  const turnLimitMs = (username, hosted = false) => {
+    const value=accounts[username]?.[hosted?'botServerTurnLimitMs':'botLocalTurnLimitMs'];
     return Number.isInteger(value)&&value>=1000&&value<=120000?value:5000;
   };
   const findAssignments = username => {
@@ -20,7 +20,7 @@ export function installBotApi({ app, rooms, accounts, sessions, emitRoom, addLog
   const directory = () => Object.keys(accounts).filter(name => accounts[name].type === 'bot' && accounts[name].status !== 'pending')
     .sort().map(username => {const externalOnline=Date.now()-(externalPresence.get(username)||0)<15000,serverOnline=Date.now()-(hostedPresence.get(username)||0)<15000,serverHosted=isHosted(username);return { username, rating: accounts[username].rating ?? 1500, online:externalOnline||serverOnline,
       externalOnline,serverOnline,serverHosted,runtimeMode:serverHosted?(externalOnline?'mixed':'server'):externalOnline?'external':'offline',serverHostingDisabled:!!accounts[username].botServerHostingDisabled,
-      seats: findAssignments(username).length, turnLimitMs:turnLimitMs(username) };});
+      seats: findAssignments(username).length, localTurnLimitMs:turnLimitMs(username,false),serverTurnLimitMs:turnLimitMs(username,true) };});
 
   function attach(room, seat, username) {
     if (!accounts[username] || accounts[username].blocked || accounts[username].type !== 'bot' || accounts[username].status === 'pending') return '请选择未封禁且已审核的 BOT 账号';
@@ -46,7 +46,7 @@ export function installBotApi({ app, rooms, accounts, sessions, emitRoom, addLog
     if (room.botClock) clearTimeout(room.botClock.timer);
     room.botClock = null;
     if (!key) return;
-    const limit=turnLimitMs(current.username);
+    const limit=turnLimitMs(current.username,isHosted(current.username,current.token));
     const clock = { key, deadline: Date.now() + limit };
     room.botClock = clock;
     clock.timer = setTimeout(() => {
@@ -85,7 +85,7 @@ export function installBotApi({ app, rooms, accounts, sessions, emitRoom, addLog
     next();
   });
   app.get('/api/bot/board', (req, res) => res.json({ apiVersion: 1, ruleset: 'siguo-custom-v1', ...publicBoard(),
-    straightRailLines: BOARD.straightRailLines, pieceInfo: PIECE_INFO, turnLimitMs:turnLimitMs(req.botUsername) }));
+    straightRailLines: BOARD.straightRailLines, pieceInfo: PIECE_INFO, turnLimitMs:turnLimitMs(req.botUsername,req.hosted) }));
   app.get('/api/bot/session', (req, res) => {
     const assignments = findAssignments(req.botUsername).filter(item => !req.botAssignmentId || item.player.token === req.botAssignmentId)
       .map(({ room, player }) => ({ code: room.code, seat: player.seat, assignmentId: player.token }));
@@ -126,7 +126,7 @@ export function installBotApi({ app, rooms, accounts, sessions, emitRoom, addLog
       drawOffer:room.drawOffer||null, drawn:!!room.drawn, autoDrawReason:room.autoDrawReason||null,
       ply:room.ply||0, noCapturePly:room.noCapturePly||0, noCapturePlyLimit:16,
       initialPlayerCount:room.initialPlayerCount||room.capacity, totalPlyLimit:(room.initialPlayerCount||room.capacity)*128,
-      serverTime: Date.now(), deadline: room.botClock?.deadline || null, turnLimitMs:turnLimitMs(player.username),
+      serverTime: Date.now(), deadline: room.botClock?.deadline || null, turnLimitMs:turnLimitMs(player.username,req.hosted),
       pieces, records, battles: room.publicBattles || [], legalMoves,
       logs: [...(room.privateLogs.get(player.seat) || []), ...room.logs].sort((a, b) => b.time - a.time).slice(0, 80) });
   });
@@ -180,5 +180,5 @@ export function installBotApi({ app, rooms, accounts, sessions, emitRoom, addLog
       if(room.botClock)clearTimeout(room.botClock.timer);room.botClock=null;update(room);emitRoom(room);
     }
   }
-  return { attach, update, directory, removeAccount, refreshAccount, isOnline: username => Date.now() - (presence.get(username) || 0) < 15000 };
+  return { attach, update, directory, removeAccount, refreshAccount, turnLimitMs:(username,assignmentId)=>turnLimitMs(username,isHosted(username,assignmentId)), isOnline: username => Date.now() - (presence.get(username) || 0) < 15000 };
 }

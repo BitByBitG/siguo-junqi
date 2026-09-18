@@ -31,6 +31,7 @@ export function installHostedBots({ app, accounts, sessions, server, filename })
   try { programs = Object.assign(Object.create(null), JSON.parse(fs.readFileSync(filename, 'utf8'))); }
   catch (error) { if (error.code !== 'ENOENT') throw error; programs = Object.create(null); }
   const jobs = new Map(), status = new Map(), tokens = new Map();
+  let onModeChange=()=>{};
   let workers = 0;
   const maxWorkers = Math.max(1, Math.min(8, Number(process.env.BOT_WORKERS) || 2));
   const key = (username, assignmentId = '') => `${username}\u0000${assignmentId}`;
@@ -91,7 +92,7 @@ export function installHostedBots({ app, accounts, sessions, server, filename })
     if (typeof req.body?.enabled !== 'boolean') return res.status(400).json({ error: 'enabled 必须为布尔值' });
     if(req.body.enabled&&accounts[req.username]?.botServerHostingDisabled)return res.status(403).json({error:'管理员已禁止此 BOT 使用服务器托管'});
     const program = programs[req.username]; if (!program) return res.status(400).json({ error: '请先保存程序' });
-    stop(req.username); program.enabled = req.body.enabled; await save.flush();
+    stop(req.username); program.enabled = req.body.enabled; await save.flush();onModeChange(req.username);
     status.set(key(req.username), { message: program.enabled ? '已启动，等待房主分配位置' : '已停止', updatedAt: Date.now() });
     res.json({ ok: true, enabled: program.enabled });
   });
@@ -153,5 +154,5 @@ export function installHostedBots({ app, accounts, sessions, server, filename })
   }, 200);
   timer.unref();
   server.once('close', () => {clearInterval(timer);for(const username of Object.keys(programs))stop(username);});
-  return { enabled, hosted, refreshAccount(username){if(!enabled(username))stop(username);}, remove(username) { stop(username); delete programs[username]; for (const k of status.keys()) if (k.startsWith(username + '\u0000')) status.delete(k); return save.flush(); }, flushSave: () => save.flush() };
+  return { enabled, hosted, setOnModeChange(callback){onModeChange=callback||(()=>{});}, refreshAccount(username){if(!enabled(username))stop(username);}, remove(username) { stop(username); delete programs[username]; for (const k of status.keys()) if (k.startsWith(username + '\u0000')) status.delete(k); return save.flush(); }, flushSave: () => save.flush() };
 }

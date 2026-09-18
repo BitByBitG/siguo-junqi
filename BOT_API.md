@@ -2,7 +2,7 @@
 
 ## 自动和棋与账号权限（2.5.8）
 
-已移除 `quietMoves`、`quietMoveLimit` 和 BOT 五步判负。有 BOT 参加的对局，连续 16 次全桌合法走子无任何棋子阵亡，或全桌总步数达到开局位置数 × 128，服务器自动和棋，无需调用 draw、不计算 Rating。BOT 出局不取消上限；同账号占多个位置按多个位置计数。纯人类对局不适用。每个 BOT 账号有独立单步时限，默认 5 秒，由管理员设置。
+已移除 `quietMoves`、`quietMoveLimit` 和 BOT 五步判负。有 BOT 参加的对局，连续 16 次全桌合法走子无任何棋子阵亡，或全桌总步数达到开局位置数 × 128，服务器自动和棋，无需调用 draw、不计算 Rating。BOT 出局不取消上限；同账号占多个位置按多个位置计数。纯人类对局不适用。每个 BOT 账号分别设置本地/外部程序时限与服务器托管时限，默认均为 5 秒。
 
 GET `/api/bot/rooms/:code` 新增／明确以下字段：
 
@@ -137,7 +137,7 @@ node siguo-junqi-bot.mjs
 
 `POST /api/bot/login` 提交 `{username,password}`，返回 `token, username, accountType`。后续业务请求携带 Bearer token。token 默认七天有效，退出、改密码、删除账号或服务器重启后需重新登录。普通玩家 token 访问 BOT 专属接口返回 403。
 
-`GET /api/bots` 返回已审核 BOT 的 `username, rating, online, seats, turnLimitMs`，其中 seats 为占用位置数量，turnLimitMs 为该账号的单步时限。这个目录与真人 Rating 排名分开。在线状态来自最近 15 秒的 BOT API 活动，不等于登录了工作台。
+`GET /api/bots` 返回已审核 BOT 的 `username, rating, online, seats, localTurnLimitMs, serverTurnLimitMs, runtimeMode`。其中 seats 为占用位置数量，两项时限分别对应本地/外部程序和服务器托管，runtimeMode 表示当前运行方式。这个目录与真人 Rating 排名分开。
 
 ## 读取接口
 
@@ -209,7 +209,7 @@ revision 因棋局、布阵、准备、人员变化而更新，聊天与心跳�
 | 426 | 使用了未加密业务请求，改用加密客户端 |
 | 429 | 请求或验证过于频繁，等待后重试 |
 
-BOT 回合按账号配置的时限从服务器切换回合开始计时，包含轮询与网络；`turnLimitMs` 给出完整时限，用 `deadline - serverTime` 估算本回合剩余时间并留出余量。到时未收到合法着法，服务器判该方负，不会替程序随机走一步。离座接替时保留原棋子，直接从当前 state 开始。
+BOT 回合根据当前实际运行方式选用本地时限或服务器时限，从服务器切换回合开始计时，包含轮询与网络；房间状态中的 `turnLimitMs` 是本回合实际采用的完整时限，用 `deadline - serverTime` 估算剩余时间并留出余量。到时未收到合法着法，服务器判该方负，不会替程序随机走一步。
 
 托管部署同时支持公网 HTTP 源站和本地 HTTPS；内部请求仅走服务器回环地址。若工作台显示离线，先检查是否已「保存并启动」、房主是否分配位置、错误提示及服务器日志。服务器刚重启时登录 token 会失效，但已保存且 enabled 的托管程序会重新建立连接。
 

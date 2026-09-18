@@ -2,7 +2,7 @@
 <html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>API · 四国军棋</title><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/cf-layout.css"><link rel="icon" type="image/png" href="/favicon.png?v=240"></head>
 <body><script type="module" src="/site-shell.js"></script><main class="document-shell"><p><a class="document-download" href="/BOT_API.md" download="BOT_API.md">下载 BOT_API.md 文档</a></p><h1>BOT API</h1>
 <h2>自动和棋与账号权限（2.5.8）</h2>
-<p>已移除 <code>quietMoves</code>、<code>quietMoveLimit</code> 和 BOT 五步判负。有 BOT 参加的对局，连续 16 次全桌合法走子无任何棋子阵亡，或全桌总步数达到开局位置数 × 128，服务器自动和棋，无需调用 draw、不计算 Rating。BOT 出局不取消上限；同账号占多个位置按多个位置计数。纯人类对局不适用。每个 BOT 账号有独立单步时限，默认 5 秒，由管理员设置。</p>
+<p>已移除 <code>quietMoves</code>、<code>quietMoveLimit</code> 和 BOT 五步判负。有 BOT 参加的对局，连续 16 次全桌合法走子无任何棋子阵亡，或全桌总步数达到开局位置数 × 128，服务器自动和棋，无需调用 draw、不计算 Rating。BOT 出局不取消上限；同账号占多个位置按多个位置计数。纯人类对局不适用。每个 BOT 账号分别设置本地/外部程序时限与服务器托管时限，默认均为 5 秒。</p>
 <p>GET <code>/api/bot/rooms/:code</code> 新增／明确以下字段：</p>
 <table>
 <thead>
@@ -168,7 +168,7 @@ node siguo-junqi-bot.mjs
 <p>服务器接受时间偏差不超过两分钟的消息，并拒绝重复 nonce。通道过期或丢失后需重建；不要把密码、token、私钥或 AES 密钥写进公开日志。上述协议保障传输与完整性，服务器仍能处理明文；它不防御已被控制的登录终端。证书须被客户端正确验证，不要用跳过 TLS 校验解决部署问题。</p>
 <h2>认证与公开目录</h2>
 <p><code>POST /api/bot/login</code> 提交 <code>{username,password}</code>，返回 <code>token, username, accountType</code>。后续业务请求携带 Bearer token。token 默认七天有效，退出、改密码、删除账号或服务器重启后需重新登录。普通玩家 token 访问 BOT 专属接口返回 403。</p>
-<p><code>GET /api/bots</code> 返回已审核 BOT 的 <code>username, rating, online, seats, turnLimitMs</code>，其中 seats 为占用位置数量，turnLimitMs 为该账号的单步时限。这个目录与真人 Rating 排名分开。在线状态来自最近 15 秒的 BOT API 活动，不等于登录了工作台。</p>
+<p><code>GET /api/bots</code> 返回已审核 BOT 的 <code>username, rating, online, seats, localTurnLimitMs, serverTurnLimitMs, runtimeMode</code>。两项时限分别对应本地/外部程序和服务器托管，runtimeMode 表示当前运行方式。</p>
 <h2>读取接口</h2>
 <table>
 <thead>
@@ -329,7 +329,7 @@ node siguo-junqi-bot.mjs
 <td>请求或验证过于频繁，等待后重试</td>
 </tr>
 </tbody></table>
-<p>BOT 回合按账号配置的时限从服务器切换回合开始计时，包含轮询与网络；<code>turnLimitMs</code> 给出完整时限，用 <code>deadline - serverTime</code> 估算本回合剩余时间并留出余量。到时未收到合法着法，服务器判该方负，不会替程序随机走一步。离座接替时保留原棋子，直接从当前 state 开始。</p>
+<p>BOT 回合根据实际运行方式选用本地时限或服务器时限，从服务器切换回合开始计时，包含轮询与网络；房间状态中的 <code>turnLimitMs</code> 是本回合实际采用的完整时限，用 <code>deadline - serverTime</code> 估算剩余时间并留出余量。</p>
 <p>托管部署同时支持公网 HTTP 源站和本地 HTTPS；内部请求仅走服务器回环地址。若工作台显示离线，先检查是否已「保存并启动」、房主是否分配位置、错误提示及服务器日志。服务器刚重启时登录 token 会失效，但已保存且 enabled 的托管程序会重新建立连接。</p>
 <h2>工作台管理接口</h2>
 <p>这三个接口使用 BOT 账号的网页登录 token，同样通过加密通道，仅能操作自己的程序。</p>
