@@ -229,10 +229,13 @@
           if(version!==accountLoad)return;
           list.replaceChildren();
           if (!accounts.length) list.textContent = "暂无账号";
-          for (const account of accounts) {
+          const ordered=[...accounts].sort((a,b)=>(a.accountType==='bot')-(b.accountType==='bot')||a.username.localeCompare(b.username,'zh-CN'));
+          let sectionType=null;
+          for (const account of ordered) {
+            if(account.accountType!==sectionType){sectionType=account.accountType;const heading=document.createElement('h3');heading.className='account-type-heading';heading.textContent=sectionType==='bot'?`BOT 账号（${ordered.filter(x=>x.accountType==='bot').length}）`:`人类账号（${ordered.filter(x=>x.accountType!=='bot').length}）`;list.append(heading);}
             const username = account.username;
             const row = document.createElement("div");
-            row.className = "account-row";
+            row.className = `account-row ${account.accountType==='bot'?'bot-account':'human-account'}`;
             const name = document.createElement("span"),profile=document.createElement('a');profile.href='/profile/'+encodeURIComponent(username);profile.textContent=username;colorRating(profile,account.rating);name.append(profile,document.createTextNode(` · ${account.admin ? "管理员账号" : account.accountType === "bot" ? "BOT 账号" : "玩家账号"} · ${account.rank} · ${account.rating}（${account.ratedGames} 局，最高 ${account.peakRating}）${account.blocked?' · 已封禁':''}${account.globallyMuted?' · 已全站禁言':''}`));
             const ratingInput = document.createElement("input");
             ratingInput.className = "rating-input"; ratingInput.type = "number";
@@ -273,7 +276,10 @@
               };
               row.append(name, ratingInput, saveRating, adminButton, button);
             } else {
-              row.append(name, ratingInput, saveRating, button);
+              const limitInput=document.createElement('input');limitInput.className='bot-time-input';limitInput.type='number';limitInput.min='1';limitInput.max='120';limitInput.step='.1';limitInput.value=String((account.botTurnLimitMs||5000)/1000);limitInput.setAttribute('aria-label',`${username} 走棋时限（秒）`);
+              const saveLimit=document.createElement('button');saveLimit.type='button';saveLimit.className='icon-button';saveLimit.textContent='改时限';saveLimit.onclick=async()=>{try{const updated=await request('/api/admin/accounts/'+encodeURIComponent(username)+'/bot-time-limit',{method:'PATCH',body:JSON.stringify({seconds:Number(limitInput.value)})});result.textContent=`${username} 的走棋时限已改为 ${updated.botTurnLimitMs/1000} 秒`;await loadAccounts();}catch(error){result.textContent=error.message;}};
+              const limitLabel=document.createElement('span');limitLabel.className='bot-time-control';limitLabel.append(document.createTextNode('时限 '),limitInput,document.createTextNode(' 秒'));
+              row.append(name, ratingInput, saveRating, limitLabel, saveLimit, button);
             }
             const block=document.createElement('button');block.className='icon-button';block.textContent=account.blocked?'解封':'封禁';block.onclick=async()=>{try{await request('/api/admin/accounts/'+encodeURIComponent(username)+'/block',{method:'PATCH',body:JSON.stringify({blocked:!account.blocked})});await loadAccounts();}catch(e){result.textContent=e.message;}};row.append(block);
             const mute=document.createElement('button');mute.className='icon-button';mute.textContent=account.globallyMuted?'解除全站禁言':'全站禁言';mute.onclick=async()=>{try{await request('/api/admin/chat',{method:'POST',body:JSON.stringify({action:account.globallyMuted?'unban':'ban',username})});await loadAccounts();}catch(e){result.textContent=e.message;}};row.append(mute);
@@ -291,6 +297,7 @@
             ...['ban','unban'].map(action=>({text:action==='ban'?'全站禁言':'解除全站禁言',run:username=>request('/api/admin/chat',{method:'POST',body:JSON.stringify({action,username})})}))
           ],loadAccounts,result);
           const batchBar=list.querySelector('.admin-batch-toolbar');
+          if(batchBar){const limit=document.createElement('input');limit.className='bot-time-input';limit.type='number';limit.min='1';limit.max='120';limit.step='.1';limit.value='5';limit.setAttribute('aria-label','批量 BOT 走棋时限（秒）');const setLimit=document.createElement('button');setLimit.type='button';setLimit.textContent='所选 BOT 改时限';setLimit.onclick=async()=>{const usernames=[...list.querySelectorAll('.admin-pick:checked')].map(x=>x.value),bots=usernames.filter(name=>accounts.find(x=>x.username===name)?.accountType==='bot');if(!bots.length){result.textContent='请至少选择一个 BOT 账号';return;}if(bots.length!==usernames.length&&!confirm(`所选账号中有 ${usernames.length-bots.length} 个人类账号，将只修改 ${bots.length} 个 BOT，是否继续？`))return;let failed=[];for(const username of bots)try{await request('/api/admin/accounts/'+encodeURIComponent(username)+'/bot-time-limit',{method:'PATCH',body:JSON.stringify({seconds:Number(limit.value)})});}catch(error){failed.push(`${username}：${error.message}`);}result.textContent=`批量修改 BOT 时限：成功 ${bots.length-failed.length}，失败 ${failed.length}${failed.length?'；'+failed.join('；'):''}`;await loadAccounts();};const wrap=document.createElement('span');wrap.className='bot-time-control';wrap.append(document.createTextNode('BOT 时限 '),limit,document.createTextNode(' 秒'));batchBar.append(wrap,setLimit);}
           if(batchBar&&adminGroups.length){const target=document.createElement('select');target.className='account-group-select';for(const group of adminGroups)target.add(new Option(group.name,group.id));const move=document.createElement('button');move.textContent='所选改分组';move.onclick=async()=>{const usernames=[...list.querySelectorAll('.admin-pick:checked')].map(x=>x.value);if(!usernames.length)return;if(!confirm(`将所选 ${usernames.length} 个账号移至“${target.selectedOptions[0]?.textContent}”？`))return;try{await request('/api/admin/group-members',{method:'PATCH',body:JSON.stringify({usernames,groupId:target.value})});await loadAccounts();}catch(e){result.textContent=e.message;}};batchBar.append(target,move);}
         } catch (error) { list.textContent = error.message; }
       }

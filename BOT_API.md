@@ -2,7 +2,7 @@
 
 ## 自动和棋与账号权限（2.5.8）
 
-已移除 `quietMoves`、`quietMoveLimit` 和 BOT 五步判负。有 BOT 参加的对局，连续 16 次全桌合法走子无任何棋子阵亡，或全桌总步数达到开局位置数 × 128，服务器自动和棋，无需调用 draw、不计算 Rating。BOT 出局不取消上限；同账号占多个位置按多个位置计数。纯人类对局不适用。单步五秒超时判负不变。
+已移除 `quietMoves`、`quietMoveLimit` 和 BOT 五步判负。有 BOT 参加的对局，连续 16 次全桌合法走子无任何棋子阵亡，或全桌总步数达到开局位置数 × 128，服务器自动和棋，无需调用 draw、不计算 Rating。BOT 出局不取消上限；同账号占多个位置按多个位置计数。纯人类对局不适用。每个 BOT 账号有独立单步时限，默认 5 秒，由管理员设置。
 
 GET `/api/bot/rooms/:code` 新增／明确以下字段：
 
@@ -37,7 +37,7 @@ BOT 登录后只使用工作台、程序管理和 BOT 接口，不能访问其�
 
 ### 和棋接口（2.4.0）
 
-棋局包含 `drawOffer: null | {id, proposer, accepted, time}`，`accepted` 是已同意的方向数组。`POST /api/bot/rooms/:code/draw` 使用相同的 `assignmentId`、`revision`、`requestId`，另加 `accept: true | false`、`offerId`。无申请时省略 `offerId` 并提交 `accept:true` 发起申请；已有申请时必须传当前 `offerId` 表示同意／拒绝。存活位置可以不在本方回合提交，已出局位置不能表态。所有存活位置同意才和棋，不结算 Rating。继续走棋、人员变化或拒绝会取消申请；不暂停 5 秒计时。自动和棋不需要此接口。
+棋局包含 `drawOffer: null | {id, proposer, accepted, time}`，`accepted` 是已同意的方向数组。`POST /api/bot/rooms/:code/draw` 使用相同的 `assignmentId`、`revision`、`requestId`，另加 `accept: true | false`、`offerId`。无申请时省略 `offerId` 并提交 `accept:true` 发起申请；已有申请时必须传当前 `offerId` 表示同意／拒绝。存活位置可以不在本方回合提交，已出局位置不能表态。所有存活位置同意才和棋，不结算 Rating。继续走棋、人员变化或拒绝会取消申请；不暂停当前 BOT 的走棋计时。自动和棋不需要此接口。
 
 托管程序返回 `{action:'draw',accept:true,offerId:state.drawOffer.id}` 即表示同意；拒绝用 `accept:false`。非本方回合收到申请时，可额外调用一次 `act`，此时 `drawOnly:true`，只接受 draw 返回值，其余返回值忽略。没有实现表态逻辑的 BOT 不会被自动同意。参考处理：
 
@@ -82,7 +82,7 @@ function act(state) {
 
 程序源码最多 **1 MiB（UTF-8 字节）**。QuickJS 环境不提供 Node.js、网络、文件、系统命令、模块导入或异步定时器。JS 堆限制 48 MiB，WASM 内存上限 64 MiB，并有 Worker 强制超时。请使用 `Date.now()` 检查自己的截止时间，提前结束搜索并返回合法着法。
 
-对局每步总限时五秒，托管会留出读写与调度时间，实际传入预算可能更短。布阵调用也有运行预算。程序出错会显示错误并重试，无法在回合结束前提交合法着法仍会判负；错误本身不会自动取消 enabled。停止托管后才能使用外部客户端给同一位置提交操作。
+对局每步总限时按 BOT 账号独立设置（1～120 秒，默认 5 秒），托管会留出读写与调度时间，实际传入预算可能更短。布阵调用也有运行预算。程序出错会显示错误并重试，无法在回合结束前提交合法着法仍会判负；错误本身不会自动取消 enabled。停止托管后才能使用外部客户端给同一位置提交操作。
 
 ## 外部程序与加密
 
@@ -137,7 +137,7 @@ node siguo-junqi-bot.mjs
 
 `POST /api/bot/login` 提交 `{username,password}`，返回 `token, username, accountType`。后续业务请求携带 Bearer token。token 默认七天有效，退出、改密码、删除账号或服务器重启后需重新登录。普通玩家 token 访问 BOT 专属接口返回 403。
 
-`GET /api/bots` 返回已审核 BOT 的 `username, rating, online, seats`，其中 seats 为占用位置数量。这个目录与真人 Rating 排名分开。在线状态来自最近 15 秒的 BOT API 活动，不等于登录了工作台。
+`GET /api/bots` 返回已审核 BOT 的 `username, rating, online, seats, turnLimitMs`，其中 seats 为占用位置数量，turnLimitMs 为该账号的单步时限。这个目录与真人 Rating 排名分开。在线状态来自最近 15 秒的 BOT API 活动，不等于登录了工作台。
 
 ## 读取接口
 
@@ -209,7 +209,7 @@ revision 因棋局、布阵、准备、人员变化而更新，聊天与心跳�
 | 426 | 使用了未加密业务请求，改用加密客户端 |
 | 429 | 请求或验证过于频繁，等待后重试 |
 
-BOT 回合的五秒从服务器切换回合开始计时，包含轮询与网络；用 `deadline - serverTime` 估算剩余时间并留出余量。到时未收到合法着法，服务器判该方负，不会替程序随机走一步。离座接替时保留原棋子，直接从当前 state 开始。
+BOT 回合按账号配置的时限从服务器切换回合开始计时，包含轮询与网络；`turnLimitMs` 给出完整时限，用 `deadline - serverTime` 估算本回合剩余时间并留出余量。到时未收到合法着法，服务器判该方负，不会替程序随机走一步。离座接替时保留原棋子，直接从当前 state 开始。
 
 托管部署同时支持公网 HTTP 源站和本地 HTTPS；内部请求仅走服务器回环地址。若工作台显示离线，先检查是否已「保存并启动」、房主是否分配位置、错误提示及服务器日志。服务器刚重启时登录 token 会失效，但已保存且 enabled 的托管程序会重新建立连接。
 

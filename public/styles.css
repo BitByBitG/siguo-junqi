@@ -222,7 +222,7 @@ select { padding: 0 0.8rem; }
 .game-layout {
   min-height: calc(100vh - 4.5rem);
   display: grid;
-  grid-template-columns: clamp(14rem, 17vw, 18rem) minmax(34rem, 1fr) clamp(15rem, 18vw, 19rem);
+  grid-template-columns: clamp(17rem, 20vw, 21rem) minmax(0, 1fr) clamp(18rem, 22vw, 23rem);
 }
 .panel { padding: 1.3rem; background: rgba(17, 17, 17, 0.78); }
 .players-panel { border-right: 1px solid var(--line); }
@@ -286,7 +286,7 @@ select { padding: 0 0.8rem; }
 .turn-banner { min-height: 1.8rem; margin-bottom: 0.55rem; color: #d0d0d0; font-size: 0.9rem; letter-spacing: 0.05em; }
 .board-frame {
   position: relative;
-  width: min(100%, calc(100vh - 8rem));
+  width: min(100%, calc(100vh - 10rem));
   aspect-ratio: 1;
   border: 1px solid rgba(170, 170, 170, 0.35);
   border-radius: 0.4rem;
@@ -297,7 +297,7 @@ select { padding: 0 0.8rem; }
 .board-frame::before, .board-frame::after { content: ""; position: absolute; z-index: 1; border: 1px solid rgba(170,170,170,.16); pointer-events: none; opacity:var(--board-opacity,1); }
 .board-frame::before { inset: .65rem; }
 .board-frame::after { inset: 1rem; }
-.board-disguise{position:absolute;z-index:0;inset:0;margin:0;padding:1.2rem;overflow:hidden;white-space:pre-wrap;color:#d4d4d4;background:#1e1e1e;font:clamp(7px,.66vw,12px)/1.38 Consolas,"Cascadia Code",monospace;pointer-events:none}.cpp-keyword{color:#c586c0}.cpp-type{color:#4ec9b0}.cpp-function{color:#dcdcaa}.cpp-number{color:#b5cea8}
+.board-disguise{position:absolute;z-index:0;inset:0;margin:0;padding:1.2rem;overflow:hidden;white-space:nowrap;color:#cccccc;background:#1f1f1f;font:15px/20px Consolas,"Courier New",monospace;font-weight:normal;pointer-events:none}
 .board-tint{position:absolute;z-index:1;inset:0;background:#090909;opacity:var(--board-opacity,1);pointer-events:none}
 #game-board { position: relative; z-index: 2; width: 100%; height: 100%; overflow: visible; touch-action: manipulation; opacity:var(--board-opacity,1); }
 .board-emblem { position: absolute; z-index: 2; left: 50%; top: 50%; transform: translate(-50%,-50%); color: rgba(180,180,180,.12); font: 2.3rem STKaiti, KaiTi, serif; pointer-events: none; opacity:var(--board-opacity,1); }
@@ -325,20 +325,21 @@ select { padding: 0 0.8rem; }
 .piece { cursor: pointer; filter: drop-shadow(0 .07px .08px rgba(0,0,0,.7)); }
 .piece-body { stroke: rgba(255,255,255,.28); stroke-width: .035; rx: .1; }
 .piece-border { fill: none; stroke: rgba(10,10,10,.55); stroke-width: .08; rx: .12; }
-.piece-label { fill: #fff; font-size: .42px; font-weight: 900; text-anchor: middle; dominant-baseline: middle; pointer-events: none; text-shadow: 0 1px 1px #000; }
+.piece-label { fill: #fff; font-size: .37px; font-weight: 900; text-anchor: middle; dominant-baseline: middle; pointer-events: none; text-shadow: 0 1px 1px #000; }
 .last-moved-outline { fill: none; stroke: #fff; stroke-width: .12; pointer-events: none; }
 .piece.selected .piece-body { stroke: #fff1bd; stroke-width: .1; }
 .piece:focus, .node:focus { outline: none; }
 .piece:focus-visible .piece-body, .node:focus-visible .node-station { stroke: #fff; stroke-width: .08; }
 .replay-board { pointer-events: none; }
+.replay-dialog{width:min(95vw,1000px);max-height:95vh;padding:1rem;color:#eee;background:#111;border:1px solid #666;border-radius:4px}.replay-dialog::backdrop{background:rgba(0,0,0,.68)}
 .piece.selected { filter: drop-shadow(0 0 .18px #ffe5a0); }
 .piece.last-moved { filter: drop-shadow(0 0 .22px rgba(255,255,255,.88)); }
 .piece.revealed .piece-body { stroke: #fff0b1; stroke-width: .075; }
 .empty-selected { fill: rgba(255,255,255,.12); stroke: #f0d08d; stroke-width: .05; }
 .sector-label { fill: rgba(240,240,240,.18); font: .62px STKaiti, KaiTi, serif; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
 
-.board-opacity-control{width:min(100%,calc(100vh - 8rem));display:flex;align-items:center;justify-content:center;gap:.6rem;padding-top:.55rem;color:var(--muted);font-size:.78rem}.board-opacity-control input{width:min(15rem,45%)}.board-opacity-control output{min-width:3em}
-.board-controls { width: min(100%, calc(100vh - 8rem)); min-height: 3.2rem; padding-top: 0.45rem; display: flex; justify-content: center; gap: 0.6rem; }
+.board-opacity-control{width:min(100%,calc(100vh - 10rem));display:flex;align-items:center;justify-content:center;gap:.6rem;padding-top:.55rem;color:var(--muted);font-size:.78rem}.board-opacity-control input{width:min(15rem,45%)}.board-opacity-control output{min-width:3em}
+.board-controls { width: min(100%, calc(100vh - 10rem)); min-height: 3.2rem; padding-top: 0.75rem; display: flex; justify-content: center; gap: 0.6rem; }
 .board-controls .control-button { width: auto; min-width: 8rem; }
 .setup-hint { align-self: center; color: var(--muted); font-size: 0.82rem; }
 
@@ -410,7 +411,7 @@ select { padding: 0 0.8rem; }
   .game-layout { min-height: calc(100vh - 3.5rem); grid-template-columns: 15rem minmax(25rem, 1fr) 17rem; }
   .board-stage { padding: .35rem; }
   .turn-banner { margin: 0; min-height: 1.25rem; font-size: .68rem; }
-  .board-frame, .board-controls { width: min(100%, calc(100vh - 6.5rem)); }
+  .board-frame, .board-controls, .board-opacity-control { width: min(100%, calc(100vh - 6.5rem)); }
   .board-controls { min-height: 2.5rem; padding-top: .35rem; }
   .panel { padding: .7rem; }
   .battle-log { max-height: calc(100vh - 6rem); grid-template-columns: 1fr; }
@@ -481,7 +482,7 @@ select { padding: 0 0.8rem; }
 .spectators-list { display:grid; gap:.4rem; margin-top:1rem; padding-top:.8rem; border-top:1px solid var(--line); font-size:.76rem; }
 .spectator-row { display:flex; align-items:center; justify-content:space-between; gap:.5rem; color:var(--muted); }
 .kick-button { margin-left:auto; padding:.25rem .4rem; border:1px solid var(--line); color:var(--danger); background:#171717; font-size:.68rem; }
-.piece-guess { fill:#ff8dcc; stroke:#230014; stroke-width:.035; paint-order:stroke; font-size:.34px; font-weight:900; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }
+.piece-guess { fill:#ffe45c; stroke:none; font-family:inherit; font-size:.35px; font-weight:700; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }
 .piece-mark-menu { position:fixed; z-index:50; width:230px; display:grid; grid-template-columns:repeat(4,1fr); gap:1px; padding:4px; border:1px solid #70445d; border-radius:5px; background:#0b0b0b; box-shadow:0 12px 36px rgba(0,0,0,.8); }
 .piece-mark-menu button { min-width:0; padding:.42rem .2rem; border:0; border-radius:3px; color:#ddd; background:#202020; font-size:.75rem; }
 .piece-mark-menu button:hover, .piece-mark-menu button.selected { color:#16000c; background:#ff8dcc; }

@@ -175,7 +175,6 @@ resetRoomsOnce(ROOMS_FILE);
 const savedRooms = loadRoomsArchive();
 for (const room of savedRooms.rooms) {
   initDrawCounters(room);
-  room.moveTrails ||= room.lastMove?.seat ? {[room.lastMove.seat]:room.lastMove} : {};
   if(typeof room.keepRoomHistory!=='boolean') room.keepRoomHistory=!!room.keepChatHistory;
   delete room.keepChatHistory;
   room.privateLogs = new Map(room.privateLogs || []);
@@ -231,6 +230,7 @@ function normalizeAccount(account) {
   if (typeof account.roomCreateDay !== 'string') account.roomCreateDay = '';
   if (!Number.isInteger(account.roomCreateCount) || account.roomCreateCount < 0) account.roomCreateCount = 0;
   if (typeof account.signature !== 'string') account.signature = '';
+  if (account.type === 'bot' && (!Number.isInteger(account.botTurnLimitMs) || account.botTurnLimitMs < 1000 || account.botTurnLimitMs > 120000)) account.botTurnLimitMs = 5000;
   return account;
 }
 
@@ -239,7 +239,7 @@ function accountProfile(username) {
   if (!account) return { rating: INITIAL_RATING, ratedGames: 0, peakRating: INITIAL_RATING, ...ratingRank(INITIAL_RATING) };
   normalizeAccount(account);
   const info = ratingRank(account.rating);
-  return { blocked:!!account.blocked, globallyMuted:globalBans.includes(username), avatar: account.avatar?.id || null, signature:account.signature||'', accountType: account.type || "human", admin: !!account.admin, rating: account.rating, ratedGames: account.ratedGames, peakRating: account.peakRating, rank: info.rank, rankClass: info.rankClass, groupId:account.groupId||'default', groupName:groupData.groups[account.groupId||'default']?.name||'默认分组' };
+  return { blocked:!!account.blocked, globallyMuted:globalBans.includes(username), avatar: account.avatar?.id || null, signature:account.signature||'', accountType: account.type || "human", admin: !!account.admin, rating: account.rating, ratedGames: account.ratedGames, peakRating: account.peakRating, rank: info.rank, rankClass: info.rankClass, groupId:account.groupId||'default', groupName:groupData.groups[account.groupId||'default']?.name||'默认分组', botTurnLimitMs:account.type==='bot'?account.botTurnLimitMs:null };
 }
 
 function loadAccounts() {
@@ -717,7 +717,7 @@ app.post("/api/admin/accounts", async (request, response) => {
   if(admin && !adminKeyMatches(request))return response.status(403).json({error:'创建管理员需要管理密钥'});
   if (!validCredentials(username, password)) return response.status(400).json({ error: "账号须为 2–16 位中文、字母、数字或下划线；密码须为 6–64 位" });
   if (accounts[username]) return response.status(409).json({ error: "账号已存在" });
-  accounts[username] = { ...passwordHash(password), type, admin, rating: INITIAL_RATING, ratedGames: 0, peakRating: INITIAL_RATING, groupId:'default', roomCreateDay:'', roomCreateCount:0 };
+  accounts[username] = { ...passwordHash(password), type, admin, rating: INITIAL_RATING, ratedGames: 0, peakRating: INITIAL_RATING, groupId:'default', roomCreateDay:'', roomCreateCount:0, ...(type==='bot'?{botTurnLimitMs:5000}:{}) };
   await saveAccounts.flush();
   response.status(201).json({ username });
 });
@@ -774,6 +774,16 @@ app.patch("/api/admin/accounts/:username/rating", async (request, response) => {
   broadcastChat();
 });
 
+app.patch('/api/admin/accounts/:username/bot-time-limit',async(request,response)=>{
+  const username=canonicalUsername(request.params.username),account=accounts[username];
+  if(!account||account.status==='pending')return response.status(404).json({error:'账号不存在'});
+  if(account.type!=='bot')return response.status(400).json({error:'只有 BOT 账号可以设置走棋时限'});
+  const seconds=Number(request.body?.seconds),milliseconds=Math.round(seconds*1000);
+  if(!Number.isFinite(seconds)||seconds<1||seconds>120)return response.status(400).json({error:'BOT 时限须为 1～120 秒'});
+  account.botTurnLimitMs=milliseconds;await saveAccounts.flush();botAPI.refreshAccount(username);
+  response.json({username,...accountProfile(username)});
+});
+
 app.delete("/api/admin/accounts/:username", async (request, response) => {
   const username = request.params.username;
   if (!Object.hasOwn(accounts, username)) return response.status(404).json({ error: "账号不存在" });
@@ -809,7 +819,7 @@ app.post("/api/register", async (req, res) => {
   if (!["human", "bot"].includes(type)) { throttleFailAuth(req, "register", AUTH_USER_FAIL_LIMIT); return res.status(400).json({ error: "账号类型无效" }); }
   if (!validCredentials(username, password)) { throttleFailAuth(req, "register", AUTH_USER_FAIL_LIMIT); return res.status(400).json({ error: "账号须为 2–16 位中文、字母、数字或下划线；密码须为 6–64 位" }); }
   if (Object.hasOwn(accounts, username)) { throttleFailAuth(req, "register", AUTH_USER_FAIL_LIMIT); return res.status(409).json({ error: "账号已存在或正在审核" }); }
-  accounts[username] = { ...passwordHash(password), type, status: "pending", createdAt: Date.now(), rating: INITIAL_RATING, ratedGames: 0, peakRating: INITIAL_RATING, groupId:'default', roomCreateDay:'', roomCreateCount:0 };
+  accounts[username] = { ...passwordHash(password), type, status: "pending", createdAt: Date.now(), rating: INITIAL_RATING, ratedGames: 0, peakRating: INITIAL_RATING, groupId:'default', roomCreateDay:'', roomCreateCount:0, ...(type==='bot'?{botTurnLimitMs:5000}:{}) };
   try { await saveAccounts.flush(); } catch { delete accounts[username]; return res.status(500).json({ error: "保存失败，请重试" }); }
   throttleClearAuth(req, "register");
   res.status(201).json({ message: "申请已提交，管理员通过后即可登录" });
@@ -936,10 +946,6 @@ function serializeRoom(room, viewer) {
   const adminReveal = viewerIsAdmin && spectator && viewer?.revealAll === true;
   const revealAll = room.phase === "finished" || adminReveal;
   const botDebug = spectator && room.botDebugEnabled === true && isPureBotRoom(room);
-  const allTrails=Object.values(room.moveTrails||{}).filter(Boolean).sort((a,b)=>a.ply-b.ply);
-  const ownTrail=viewer?.seat ? room.moveTrails?.[viewer.seat] : null;
-  const ownIsLatest=ownTrail && ownTrail.ply===room.lastMove?.ply;
-  const moveTrails=(ownTrail ? allTrails.filter(move=>move.ply>(ownIsLatest?ownTrail.ply-1:ownTrail.ply)) : allTrails).map(move=>({...move}));
   return {
     code: room.code,
     name: room.name || room.code,
@@ -966,7 +972,6 @@ function serializeRoom(room, viewer) {
     spectator,
     activeSeats: room.activeSeats,
     lastMove: room.lastMove || null,
-    moveTrails,
     ratingChanges: room.ratingChanges || null,
     botDebugEnabled: botDebug,
     canToggleBotDebug: (viewer?.name === room.hostName || viewerIsAdmin) && isPureBotRoom(room),
@@ -977,6 +982,7 @@ function serializeRoom(room, viewer) {
         name: player.name,
         ...accountProfile(player.username || player.name),
         isBot: !!player.isBot,
+        botTurnLimitMs:player.isBot?(accounts[player.username]?.botTurnLimitMs||5000):null,
         online: player.isBot ? botAPI.isOnline(player.username) : player.online,
         ready: player.ready,
         eliminated: player.eliminated,
@@ -1289,7 +1295,7 @@ function replayPath(room, from, to) {
   }
   return [from, to];
 }
-const UNDO_FIELDS = ['pieces', 'turn', 'ply', 'lastMove', 'moveTrails', 'eliminationOrder', 'logs', 'publicBattles', 'replay', 'noCapturePly'];
+const UNDO_FIELDS = ['pieces', 'turn', 'ply', 'lastMove', 'eliminationOrder', 'logs', 'publicBattles', 'replay', 'noCapturePly'];
 function rosterSignature(room) { return JSON.stringify(room.players.map(p => [p.seat, p.username, p.name])); }
 function undoBoardSignature(room) { return JSON.stringify([room.pieces, room.turn, room.eliminationOrder, room.players.map(p => !!p.eliminated)]); }
 function undoHasCasualty(room) {
@@ -1326,8 +1332,6 @@ function applyMove(room, player, from, to) {
     }
     room.ply = (room.ply || 0) + 1;
     room.lastMove = { from, to, path: route, pieceId: outcome === "defender" || outcome === "both" ? null : attacker.id, seat: player.seat, ply: room.ply };
-    room.moveTrails ||= {};
-    room.moveTrails[player.seat] = {...room.lastMove};
     let message = `${SEAT_NAMES[attacker.owner]}移动了一枚棋子`;
     if (outcome === "move") {
       attacker.position = to;
@@ -1518,7 +1522,6 @@ io.on("connection", (socket) => {
       turn: null,
       winner: null,
       lastMove: null,
-      moveTrails: {},
       eliminationOrder: [],
       ratingSettled: false,
       ratedParticipants: null,
@@ -1844,7 +1847,6 @@ io.on("connection", (socket) => {
     room.rated=!!room.ratingPool;
     room.turn = room.activeSeats[0];
     room.lastMove = null;
-    room.moveTrails = {};
     room.replay = { version: 1, code: room.code, startedAt: Date.now(), frames: [], logs: [] };
     room.eliminationOrder = [];
     room.ratedParticipants = room.rated ? room.players.map((item) => ({

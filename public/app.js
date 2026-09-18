@@ -19,7 +19,8 @@ const boardSvg = $("#game-board");
 const toast = $("#toast");
 
 const seatShort = { north: "北", east: "东", south: "南", west: "西" };
-const seatColors = { north: "#808080", east: "#800000", south: "#008000", west: "#000080" };
+const seatColors = { north: "#70757a", east: "#6b4c35", south: "#274634", west: "#263a55" };
+const lightSeatColors = { north: "#d6d8da", east: "#f2b8bd", south: "#b9d9c1", west: "#b8c9e5" };
 let boardMeta = null;
 let state = null;
 let selected = null;
@@ -168,7 +169,8 @@ function showToast(message, kind = "error") {
 }
 
 function seatColor(seat) {
-  return seatColors[seat] || boardMeta?.seatColors[seat];
+  const palette=document.documentElement.classList.contains('theme-light')?lightSeatColors:seatColors;
+  return palette[seat] || boardMeta?.seatColors[seat];
 }
 
 function escapeHtml(value) {
@@ -406,7 +408,7 @@ function renderBoard() {
   const defs=svgElement('defs');
   const marker=svgElement('marker',{id:'move-arrow',viewBox:'0 0 10 10',refX:'8',refY:'5',markerWidth:'.7',markerHeight:'.7',orient:'auto-start-reverse'});
   marker.append(svgElement('path',{d:'M 0 0 L 10 5 L 0 10 z',class:'last-move-arrow'}));defs.append(marker);boardSvg.append(defs);
-  const trails=state.moveTrails?.length?state.moveTrails:(state.lastMove?[state.lastMove]:[]);
+  const trails=state.lastMove?[state.lastMove]:[];
   trails.forEach((move,index)=>{
     if(!nodeMap.has(move.from)||!nodeMap.has(move.to))return;
     const opacity=trails.length===1?1:.32+.68*index/(trails.length-1);
@@ -463,8 +465,8 @@ function renderBoard() {
       role: "button",
       "aria-label": piece.type ? `${boardMeta.seatNames[piece.owner]}${boardMeta.pieceNames[piece.type]}` : `${boardMeta.seatNames[piece.owner]}暗棋`,
     });
-    group.append(svgElement("rect", { x: point.x - 0.56, y: point.y - 0.42, width: 1.12, height: 0.84, class: "piece-border" }));
-    group.append(svgElement("rect", { x: point.x - 0.53, y: point.y - 0.39, width: 1.06, height: 0.78, fill: color, class: "piece-body" }));
+    group.append(svgElement("rect", { x: point.x - 0.47, y: point.y - 0.36, width: 0.94, height: 0.72, class: "piece-border" }));
+    group.append(svgElement("rect", { x: point.x - 0.45, y: point.y - 0.34, width: 0.90, height: 0.68, fill: color, class: "piece-body" }));
     if (piece.type) {
       const label = svgElement("text", { x: point.x, y: point.y + 0.018, class: "piece-label" });
       label.textContent = boardMeta.pieceNames[piece.type];
@@ -482,10 +484,10 @@ function renderBoard() {
     });
     if (lastMoved) {
       group.append(svgElement("rect", {
-        x: point.x - 0.60,
-        y: point.y - 0.46,
-        width: 1.20,
-        height: 0.92,
+        x: point.x - 0.52,
+        y: point.y - 0.41,
+        width: 1.04,
+        height: 0.82,
         rx: 0.14,
         class: "last-moved-outline",
       }));
@@ -952,15 +954,14 @@ async function openReplay(download) {
       setTimeout(() => URL.revokeObjectURL(url), 1000); return;
     }
     document.querySelector('#replay-dialog')?.remove();
-    const dialog = document.createElement('dialog'); dialog.id = 'replay-dialog';
-    dialog.style.cssText = 'width: min(95vw,1000px);max-height:95vh;background:#111;color:#eee;border:1px solid #666';
+    const dialog = document.createElement('dialog'); dialog.id = 'replay-dialog'; dialog.className='replay-dialog';
     const toolbar = document.createElement('div'); toolbar.style.cssText = 'display:flex;gap:12px;align-items:center;flex-wrap:wrap';
     const label = document.createElement('span');
     const slider = document.createElement('input'); slider.type = 'range'; slider.min = '0'; slider.max = String(data.frames.length - 1); slider.value = '0';
     const canvas = document.createElement('div');
     const show = () => {
       const index = Number(slider.value), live = state;
-      state = { ...live, ...data.frames[index].state };
+      state = { ...live, ...data.frames[index].state, lastMove:null };
       try {
         renderBoard(); const copy = boardSvg.cloneNode(true); copy.removeAttribute('id');
         copy.querySelectorAll('.piece-guess').forEach(el=>el.remove());
@@ -987,7 +988,8 @@ function render() {
   if (state.phase === "playing") {
     const turnName = boardMeta?.seatNames[state.turn] || state.turn;
     const bot = state.players.find(p => p.seat === state.turn && p.isBot);
-    $("#turn-banner").textContent = bot ? `${turnName} BOT 等待提交（限时 5 秒）` : state.turn === state.viewerSeat ? "轮到你行动" : `等待${turnName}行动`;
+    const botSeconds = bot ? Math.round((bot.botTurnLimitMs || 5000) / 100) / 10 : 0;
+    $("#turn-banner").textContent = bot ? `${turnName} BOT 等待提交（限时 ${botSeconds} 秒）` : state.turn === state.viewerSeat ? "轮到你行动" : `等待${turnName}行动`;
   } else if (state.phase === "finished") {
     $("#turn-banner").textContent = state.drawn||state.aborted?state.winner:`${state.winner}获胜`;
   } else {
@@ -1061,10 +1063,12 @@ function refreshPreferences(){
 }
 window.addEventListener('storage',e=>{if(['junqi-chat-avatars','junqi-turn-notifications','junqi-mention-notifications'].includes(e.key))refreshPreferences();});
 window.addEventListener('junqi-preferences',refreshPreferences);
+window.addEventListener('junqi-theme',()=>{if(state){renderPlayers();renderBoard();}});
 
 const boardOpacity=$('#board-opacity');
 function applyBoardOpacity(){
-  const value=Math.max(25,Math.min(100,Number(boardOpacity.value)||100));
+  const raw=Number(boardOpacity.value);
+  const value=Math.max(0,Math.min(100,Number.isFinite(raw)?raw:100));
   document.documentElement.style.setProperty('--board-opacity',String(value/100));
   $('#board-opacity-value').value=`${value}%`;
   localStorage.setItem('junqi-board-opacity',String(value));

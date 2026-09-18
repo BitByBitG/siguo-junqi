@@ -3,6 +3,10 @@ import { BOARD, PIECE_INFO, publicBoard, createArmy, validateSetup, validateMove
 
 export function installBotApi({ app, rooms, accounts, sessions, emitRoom, addLog, applyMove, eliminate, checkWinner, advanceTurn, voteDraw, isHosted = () => false }) {
   const presence = new Map();
+  const turnLimitMs = username => {
+    const value=accounts[username]?.botTurnLimitMs;
+    return Number.isInteger(value)&&value>=1000&&value<=120000?value:5000;
+  };
   const findAssignments = username => {
     const result = [];
     for (const room of rooms.values()) for (const player of room.players) {
@@ -14,7 +18,7 @@ export function installBotApi({ app, rooms, accounts, sessions, emitRoom, addLog
     .find(item => !assignmentId || item.player.token === assignmentId) || null;
   const directory = () => Object.keys(accounts).filter(name => accounts[name].type === 'bot' && accounts[name].status !== 'pending')
     .sort().map(username => ({ username, rating: accounts[username].rating ?? 1500, online: Date.now() - (presence.get(username) || 0) < 15000,
-      seats: findAssignments(username).length }));
+      seats: findAssignments(username).length, turnLimitMs:turnLimitMs(username) }));
 
   function attach(room, seat, username) {
     if (!accounts[username] || accounts[username].blocked || accounts[username].type !== 'bot' || accounts[username].status === 'pending') return '请选择未封禁且已审核的 BOT 账号';
@@ -40,13 +44,14 @@ export function installBotApi({ app, rooms, accounts, sessions, emitRoom, addLog
     if (room.botClock) clearTimeout(room.botClock.timer);
     room.botClock = null;
     if (!key) return;
-    const clock = { key, deadline: Date.now() + 5000 };
+    const limit=turnLimitMs(current.username);
+    const clock = { key, deadline: Date.now() + limit };
     room.botClock = clock;
     clock.timer = setTimeout(() => {
       if (room.botClock !== clock || rooms.get(room.code) !== room || room.phase !== 'playing') return;
-      eliminate(room, current.seat, 'BOT 超过 5 秒未提交合法着法，判负');
+      eliminate(room, current.seat, `BOT 超过 ${Math.round(limit/100)/10} 秒未提交合法着法，判负`);
       checkWinner(room); advanceTurn(room); emitRoom(room);
-    }, 5000);
+    }, limit);
     clock.timer.unref();
   }
 
@@ -75,8 +80,8 @@ export function installBotApi({ app, rooms, accounts, sessions, emitRoom, addLog
     if (!wasOnline) for (const assigned of findAssignments(session.username)) emitRoom(assigned.room);
     next();
   });
-  app.get('/api/bot/board', (_req, res) => res.json({ apiVersion: 1, ruleset: 'siguo-custom-v1', ...publicBoard(),
-    straightRailLines: BOARD.straightRailLines, pieceInfo: PIECE_INFO, turnLimitMs: 5000 }));
+  app.get('/api/bot/board', (req, res) => res.json({ apiVersion: 1, ruleset: 'siguo-custom-v1', ...publicBoard(),
+    straightRailLines: BOARD.straightRailLines, pieceInfo: PIECE_INFO, turnLimitMs:turnLimitMs(req.botUsername) }));
   app.get('/api/bot/session', (req, res) => {
     const assignments = findAssignments(req.botUsername).filter(item => !req.botAssignmentId || item.player.token === req.botAssignmentId)
       .map(({ room, player }) => ({ code: room.code, seat: player.seat, assignmentId: player.token }));
@@ -117,7 +122,7 @@ export function installBotApi({ app, rooms, accounts, sessions, emitRoom, addLog
       drawOffer:room.drawOffer||null, drawn:!!room.drawn, autoDrawReason:room.autoDrawReason||null,
       ply:room.ply||0, noCapturePly:room.noCapturePly||0, noCapturePlyLimit:16,
       initialPlayerCount:room.initialPlayerCount||room.capacity, totalPlyLimit:(room.initialPlayerCount||room.capacity)*128,
-      serverTime: Date.now(), deadline: room.botClock?.deadline || null,
+      serverTime: Date.now(), deadline: room.botClock?.deadline || null, turnLimitMs:turnLimitMs(player.username),
       pieces, records, battles: room.publicBattles || [], legalMoves,
       logs: [...(room.privateLogs.get(player.seat) || []), ...room.logs].sort((a, b) => b.time - a.time).slice(0, 80) });
   });
@@ -166,5 +171,10 @@ export function installBotApi({ app, rooms, accounts, sessions, emitRoom, addLog
     if (player.requests.size > 128) player.requests.delete(player.requests.keys().next().value);
     res.json(reply);
   });
-  return { attach, update, directory, removeAccount, isOnline: username => Date.now() - (presence.get(username) || 0) < 15000 };
+  function refreshAccount(username){
+    for(const {room,player} of findAssignments(username))if(room.phase==='playing'&&room.turn===player.seat){
+      if(room.botClock)clearTimeout(room.botClock.timer);room.botClock=null;update(room);emitRoom(room);
+    }
+  }
+  return { attach, update, directory, removeAccount, refreshAccount, isOnline: username => Date.now() - (presence.get(username) || 0) < 15000 };
 }

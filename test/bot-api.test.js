@@ -35,6 +35,9 @@ test('参赛 BOT API：账号权限、暗棋、幂等、时限和独立程序双
   async function connect() { const socket = io(base, { transports: ['websocket'], forceNew: true }); sockets.push(socket); await event(socket, 'connect'); return socket; }
   const hostToken = await account('ApiHost', 'human'), alpha = await account('AlphaBot', 'bot'), beta = await account('BetaBot', 'bot');
   const outsider = await account('OtherBot', 'bot');
+  const changedLimit=await api('/api/admin/accounts/AlphaBot/bot-time-limit',{method:'PATCH',admin:true,body:{seconds:8}});
+  assert.equal(changedLimit.status,200);assert.equal(changedLimit.body.botTurnLimitMs,8000);
+  assert.equal((await api('/api/admin/accounts/ApiHost/bot-time-limit',{method:'PATCH',admin:true,body:{seconds:8}})).status,400);
   assert.equal((await api('/api/bot/session')).status, 401);
   assert.equal((await api('/api/bot/session', { token: hostToken })).status, 403);
   assert.equal((await api('/api/login', { method: 'POST', body: { username: 'AlphaBot', password: 'test1234' } })).status, 200);
@@ -82,7 +85,7 @@ test('参赛 BOT API：账号权限、暗棋、幂等、时限和独立程序双
   await post(beta, 'ready', action(await read(beta), { ready: true }));
   const start = event(host, 'room-state', r => r.phase === 'playing'); host.emit('start-game'); await start;
   a = await read(alpha); b = await read(beta);
-  assert.equal(a.deadline - a.serverTime > 4000, true);
+  assert.equal(a.turnLimitMs,8000);assert.equal(a.deadline - a.serverTime > 7000, true);
   const move = a.legalMoves.find(m => !a.pieces.some(p => p.position === m.to)); assert.ok(move);
   const request = action(a, move);
   const moved = await post(alpha, 'move', request); assert.equal(moved.status, 200);

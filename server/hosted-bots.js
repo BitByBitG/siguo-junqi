@@ -114,7 +114,7 @@ export function installHostedBots({ app, accounts, sessions, server, filename })
       if (job.cancelled || (state.eliminated&&!drawPending) || state.phase === 'finished') return;
       if ((state.phase === 'setup' && state.ready) || (state.phase === 'playing' && state.turn !== state.viewerSeat&&!drawPending)) return;
       const drawOnly=!!drawPending&&(state.eliminated||state.turn!==state.viewerSeat);
-      const budgetMs = drawOnly?500:state.phase === 'playing' ? Math.max(1, Math.min(3700, state.deadline - state.serverTime - 650)) : 1500;
+      const budgetMs = drawOnly?500:state.phase === 'playing' ? Math.max(1, state.deadline - state.serverTime - 650) : 1500;
       if (workers >= maxWorkers) return;
       const result = await run(program.source, { ...state, drawOnly, memory, programPrepared: !!prepared, thinkTimeMs: Math.max(1, budgetMs - 150) }, false, budgetMs, job);
       if (job.cancelled || !enabled(username)) return;
