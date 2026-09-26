@@ -204,8 +204,8 @@
             actions.append(clear,button);row.append(text,actions);addSelection(row,room.code);target.append(row);
           }
           installBatch(target,[
-            {text:'删除所选房间',danger:true,run:id=>request('/api/admin/rooms/'+encodeURIComponent(id),{method:'DELETE'})},
-            {text:'删除所选聊天记录',danger:true,run:id=>request('/api/admin/rooms/'+encodeURIComponent(id)+'/chat',{method:'DELETE'})}
+            {text:'删除所选房间',danger:true,batch:codes=>request('/api/admin/rooms/bulk-delete',{method:'POST',body:JSON.stringify({codes})})},
+            {text:'删除所选聊天记录',danger:true,batch:codes=>request('/api/admin/rooms/bulk-chat-delete',{method:'POST',body:JSON.stringify({codes})})}
           ],loadRooms,result);
         } catch (error) { target.textContent = error.message; }
       }

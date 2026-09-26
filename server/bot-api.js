@@ -23,6 +23,7 @@ export function installBotApi({ app, rooms, accounts, sessions, emitRoom, addLog
       seats: findAssignments(username).length, localTurnLimitMs:turnLimitMs(username,false),serverTurnLimitMs:turnLimitMs(username,true) };});
 
   function attach(room, seat, username) {
+    if((room.visibility||'dark')!=='dark'||!['ffa','alliance'].includes(room.mode))return 'BOT 只支持暗棋的四方混战和对家结盟';
     if (!accounts[username] || accounts[username].blocked || accounts[username].type !== 'bot' || accounts[username].status === 'pending') return '请选择未封禁且已审核的 BOT 账号';
     const player = { seat, username, name: `BOT · ${username}`, isBot: true, token: crypto.randomUUID(),
       online: Date.now() - (presence.get(username) || 0) < 15000, socketId: null, ready: room.phase === 'playing', eliminated: false,
@@ -152,12 +153,12 @@ export function installBotApi({ app, rooms, accounts, sessions, emitRoom, addLog
         || body.pieces.some(p => !p || typeof p.position !== 'string' || !own.some(q => q.id === p.id))) return res.status(400).json({ error: '必须提交本方全部 25 枚棋子的 id 和位置' });
       const byId = new Map(body.pieces.map(p => [p.id, p.position]));
       const candidate = room.pieces.map(p => p.owner === player.seat ? { ...p, position: byId.get(p.id) } : p);
-      const result = validateSetup(candidate, player.seat);
+      const result = validateSetup(candidate, player.seat, room);
       if (!result.ok) return res.status(400).json({ error: result.message });
       room.pieces = candidate;
     } else if (action === 'ready') {
       if (room.phase !== 'setup' || typeof body.ready !== 'boolean') return res.status(400).json({ error: '布阵阶段提交 ready 布尔值' });
-      const result = validateSetup(room.pieces, player.seat);
+      const result = validateSetup(room.pieces, player.seat, room);
       if (!result.ok) return res.status(400).json({ error: result.message });
       player.ready = body.ready;
       addLog(room, `${player.name}${player.ready ? '已准备' : '取消准备'}`);

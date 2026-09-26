@@ -12,7 +12,7 @@ test('bomb and flag both die; ordinary capture and bomb combat remain correct',(
 test('bomb flag capture removes both pieces and eliminates flag owner',()=>{
  const source=fs.readFileSync(new URL('../server/server.js',import.meta.url),'utf8');
  const start=source.indexOf('    let message = `${SEAT_NAMES[attacker.owner]}移动了一枚棋子`;');
- const end=source.indexOf('    const attackerName =',start);
+ const end=source.indexOf('    const dead=[];',start);
  const attacker={type:'bomb',owner:'north',position:'north-1-0'},defender={type:'flag',owner:'south',position:'south-5-1'};
  const eliminated=[];vm.runInNewContext(source.slice(start,end),{attacker,defender,outcome:resolveBattle(attacker,defender),to:defender.position,room:{},SEAT_NAMES:{north:'北',south:'南'},revealFlagWhenCommanderDies(){},eliminate:(_,seat)=>eliminated.push(seat)});
  assert.equal(attacker.position,null);assert.equal(defender.position,null);assert.deepEqual(eliminated,['south']);

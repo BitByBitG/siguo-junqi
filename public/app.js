@@ -15,6 +15,7 @@ const passwordInput = $("#player-password");
 const codeInput = $("#room-code");
 const capacityInput = $("#room-capacity");
 const modeInput = $("#room-mode");
+const visibilityInput = $("#room-visibility");
 const boardSvg = $("#game-board");
 const toast = $("#toast");
 
@@ -235,8 +236,8 @@ $("#login-form").addEventListener("submit", async (event) => {
 });
 
 function updateModeInput() {
-  modeInput.disabled = capacityInput.value !== "4";
-  if (modeInput.disabled) modeInput.value = "ffa";
+  for(const option of modeInput.options)if(['alliance','landlord'].includes(option.value))option.disabled=capacityInput.value!=="4";
+  if (capacityInput.value !== "4" && ['alliance','landlord'].includes(modeInput.value)) modeInput.value = "ffa";
 }
 
 capacityInput.addEventListener("change", updateModeInput);
@@ -250,6 +251,7 @@ $("#create-form").addEventListener("submit", (event) => {
     name: $("#new-room-name").value,
     capacity: Number(capacityInput.value),
     mode: modeInput.value,
+    visibility:visibilityInput.value,
   });
 });
 
@@ -349,7 +351,8 @@ function renderRoomList() {
     const phase = { setup: "布阵中", playing: "对局中", finished: "已结束" }[room.phase];
     const info=document.createElement('div'),title=document.createElement('strong'),code=document.createElement('small'),details=document.createElement('span'),enter=document.createElement('button');
     title.textContent=room.name||room.code;code.textContent=room.code;
-    details.textContent=`${room.phase==='setup'?'自动计分':room.rated ? (room.ratingPool==='bot'?'BOT Rated':'Rated') : '不计分'} · ${room.players}/${room.capacity} 人${room.bots ? `（${room.bots} BOT）` : ''} · ${phase}`;
+    const modeName={ffa:'四方混战',alliance:'对家结盟',random:'随机布阵',landlord:'斗地主'}[room.mode]||room.mode;
+    details.textContent=`${room.phase==='setup'?'自动计分':room.rated ? (room.ratingPool==='bot'?'BOT Rated':'Rated') : '不计分'} · ${modeName} · ${room.players}/${room.capacity} 人${room.bots ? `（${room.bots} BOT）` : ''} · ${phase}`;
     info.append(title,code,details);enter.type='button';enter.textContent=room.phase==='finished'?'查看 / 复盘':'进入';row.append(info,enter);
     enter.addEventListener("click", () => {
       if(!auth?.token){location.href='/login.html?next='+encodeURIComponent('/room/'+room.code);return;}
@@ -406,14 +409,18 @@ function renderBoard() {
   boardSvg.append(roadLayer, railBaseLayer, railLayer);
 
   const defs=svgElement('defs');
-  const marker=svgElement('marker',{id:'move-arrow',viewBox:'0 0 10 10',refX:'8',refY:'5',markerWidth:'.7',markerHeight:'.7',orient:'auto-start-reverse'});
+  const marker=svgElement('marker',{id:'move-arrow',viewBox:'0 0 10 10',refX:'9',refY:'5',markerWidth:'.62',markerHeight:'.62',markerUnits:'userSpaceOnUse',orient:'auto'});
   marker.append(svgElement('path',{d:'M 0 0 L 10 5 L 0 10 z',class:'last-move-arrow'}));defs.append(marker);boardSvg.append(defs);
   const trails=state.lastMove?[state.lastMove]:[];
   trails.forEach((move,index)=>{
     if(!nodeMap.has(move.from)||!nodeMap.has(move.to))return;
     const opacity=trails.length===1?1:.32+.68*index/(trails.length-1);
+    const points=(move.path||[move.from,move.to]).map(id=>nodeMap.get(id)).filter(Boolean).map(transformPoint);
+    if(points.length<2)return;
+    const end=points.at(-1),previous=points.at(-2),length=Math.hypot(end.x-previous.x,end.y-previous.y);
+    if(length>.57)points[points.length-1]={x:end.x-(end.x-previous.x)*.52/length,y:end.y-(end.y-previous.y)*.52/length};
     moveLayer.append(svgElement('polyline',{
-      points:(move.path||[move.from,move.to]).map(id=>nodeMap.get(id)).filter(Boolean).map(node=>{const p=transformPoint(node);return `${p.x},${p.y}`;}).join(' '),
+      points:points.map(p=>`${p.x},${p.y}`).join(' '),
       class:'last-move-path','marker-end':'url(#move-arrow)',opacity:opacity.toFixed(2),
     }));
   });
@@ -533,6 +540,7 @@ function handleBoardClick(position) {
   if (!state || state.spectator || state.phase === "finished") return;
   const piece = state.pieces.find((item) => item.position === position);
   if (state.phase === "setup") {
+    if(state.mode==='random')return showToast('随机布阵模式不能修改阵型');
     const me = state.players.find((player) => player.seat === state.viewerSeat);
     if (me?.ready) return showToast("取消准备后才能调整布阵");
     if (!selected) {
@@ -540,7 +548,7 @@ function handleBoardClick(position) {
       selected = position;
     } else if (position === selected) {
       selected = null;
-    } else if (piece?.owner === state.viewerSeat) {
+    } else if (!piece || piece.owner === state.viewerSeat) {
       socket.emit("swap-setup", { from: selected, to: position });
       selected = null;
     }
@@ -599,11 +607,12 @@ function renderPlayers() {
     card.style.setProperty("--seat-color", seatColor(player.seat) || "#aaa");
     const me = player.seat === state.viewerSeat ? " · 你" : "";
     const host = player.isHost ? " · 房主" : "";
+    const role=state.mode==='landlord'&&state.landlordSeat?(player.seat===state.landlordSeat?' · 地主':' · 农民'):'';
     const rating = player.empty ? "" : `<span class="rank-badge cf-rated" data-cf="${player.rankClass}">${player.isBot?'BOT · ':''}${escapeHtml(player.rank)} · ${player.rating}</span>`;
     const change = state.ratingChanges?.[player.seat];
     const delta = change ? `<span class="rating-delta ${change.delta >= 0 ? "up" : "down"}">${change.delta >= 0 ? "+" : ""}${change.delta}</span>` : "";
     const signature=player.empty?'':(player.signature||'').replace(/[#*_`$<>\[\]]/g,'').replace(/\s+/g,' ').slice(0,48);
-    card.innerHTML = `<div class="seat-badge">${seatShort[player.seat]}</div><div class="player-info"><div class="player-name">${player.empty ? "空座" : escapeHtml(player.name)}${me}</div><div class="player-status">${boardMeta?.seatNames[player.seat] || player.seat}${host}</div>${rating}${signature?`<div class="signature-snippet" title="${escapeHtml(player.signature||'')}">${escapeHtml(signature)}</div>`:''}</div><div class="player-state">${playerStatus(player)}${delta}</div>`;
+    card.innerHTML = `<div class="seat-badge">${seatShort[player.seat]}</div><div class="player-info"><div class="player-name">${player.empty ? "空座" : escapeHtml(player.name)}${me}</div><div class="player-status">${boardMeta?.seatNames[player.seat] || player.seat}${host}${role}</div>${rating}${signature?`<div class="signature-snippet" title="${escapeHtml(player.signature||'')}">${escapeHtml(signature)}</div>`:''}</div><div class="player-state">${playerStatus(player)}${delta}</div>`;
     if(!player.empty){const old=card.querySelector('.player-name'),link=document.createElement('a');link.href='/profile/'+encodeURIComponent(player.username||player.name);link.textContent=player.name;colorRating(link,player.rating??1500);old.replaceChildren(link,document.createTextNode(me));}
     if (!player.empty) colorRating(card.querySelector('.player-name'), player.rating ?? 1500);
     if (canModerateKick(player) && !player.empty) card.append(kickButton(player));
@@ -631,6 +640,7 @@ function renderBotPanel() {
   const heading = document.createElement('h3'); heading.textContent = '添加 BOT 账号';
   const hint = document.createElement('p');
   panel.append(heading, hint);
+  if((state.visibility||'dark')!=='dark'||!['ffa','alliance'].includes(state.mode)){hint.textContent='BOT 只支持暗棋的四方混战和对家结盟。';return;}
   if (state.rated && state.phase==='playing') { hint.textContent = 'Rated 比赛开始后不能更换参赛账号。'; return; }
   const seats = state.players.filter(p => p.empty);
   hint.textContent = seats.length ? '选择空位和已审核的 BOT 账号。账号需在工作台启动程序。' : '当前没有空位。房主可先离座或踢出一人，再添加 BOT。';
@@ -667,11 +677,16 @@ function addControl(label, className, action, disabled = false) {
 function renderControls() {
   const hostControls = $("#host-controls"), boardControls = $("#board-controls");
   hostControls.replaceChildren(); boardControls.replaceChildren();
-  if (state.isHost) hostControls.append(addControl('修改房间名称', 'alt', () => {
-    const name = prompt('房间名称（最多 40 字，留空使用房间码）', state.name || state.code);
-    if (name !== null) socket.emit('rename-room', {name});
-  }));
+  if(state.isHost&&state.phase==='setup'&&!state.landlordCalling){
+    const name=document.createElement('input');name.className='text-input';name.maxLength=40;name.value=state.name===state.code?'':state.name;name.placeholder='房间名称';
+    const capacity=document.createElement('select');for(const n of [2,3,4])capacity.add(new Option(`${n} 人`,n));capacity.value=String(state.capacity);
+    const mode=document.createElement('select');for(const [value,label] of [['ffa','四方混战'],['alliance','对家结盟'],['random','随机布阵'],['landlord','斗地主']])mode.add(new Option(label,value));mode.value=state.mode;
+    const visibility=document.createElement('select');for(const [value,label] of [['dark','暗棋'],['semi','半明棋'],['light','明棋']])visibility.add(new Option(label,value));visibility.value=state.visibility||'dark';
+    const sync=()=>{for(const option of mode.options)if(['alliance','landlord'].includes(option.value))option.disabled=capacity.value!=='4';if(capacity.value!=='4'&&['alliance','landlord'].includes(mode.value))mode.value='ffa';};capacity.onchange=sync;sync();
+    hostControls.append(name,capacity,mode,visibility,addControl('应用房间设置','alt',()=>socket.emit('configure-room',{name:name.value,capacity:Number(capacity.value),mode:mode.value,visibility:visibility.value})));
+  }
   if (state.canUndo) boardControls.append(addControl('撤回上一步', 'alt', () => socket.emit('undo-move')));
+  if (state.phase === 'playing') boardControls.append(addControl('查看之前的走棋', 'alt', () => openReplay(false)));
   if (state.phase === 'finished') {
     boardControls.append(addControl('下载完整棋谱', 'alt', () => openReplay(true)), addControl('复盘', 'alt', () => openReplay(false)));
   }
@@ -680,7 +695,8 @@ function renderControls() {
     if (state.phase === "setup") {
       const full = state.players.every((player) => !player.empty);
       const allReady = full && state.players.every((player) => player.ready);
-      hostControls.append(addControl("开始对局", "", () => socket.emit("start-game"), !allReady));
+      const calling=state.mode==='landlord'&&!state.landlordSeat;
+      hostControls.append(addControl(calling?'开始抢地主':"开始对局", "", () => socket.emit("start-game"), calling?!full:!allReady));
     }
     if (state.canToggleBotDebug) hostControls.append(addControl(state.botDebugEnabled ? "关闭 BOT 调试" : "BOT 调试：显示全部棋子", "alt", () => socket.emit("set-bot-debug", { enabled: !state.botDebugEnabled })));
     if (state.phase!=='finished' && (state.viewerIsAdmin || !(state.rated && state.phase === "playing"))) hostControls.append(addControl("关闭房间", "danger", () => { if (confirm("结束房间并保留棋谱与聊天？")) socket.emit("close-room"); }));
@@ -688,23 +704,31 @@ function renderControls() {
   }
   if (state.canToggleAdminReveal) boardControls.append(addControl(state.adminRevealEnabled ? "关闭明牌观战" : "开启明牌观战", "alt", () => socket.emit("toggle-admin-reveal", { enabled: !state.adminRevealEnabled })));
   if (state.phase === "setup") {
+    if(state.mode==='landlord'&&state.landlordCalling){
+      if(!state.spectator)boardControls.append(addControl('抢地主','',()=>socket.emit('claim-landlord')));
+      const hint=document.createElement('strong');hint.textContent='最先点击“抢地主”的玩家成为地主';boardControls.append(hint);
+    }else if(state.mode==='landlord'&&!state.landlordSeat){
+      const hint=document.createElement('strong');hint.textContent='等待房主开始抢地主';boardControls.append(hint);
+    }else
     if (state.spectator) {
       const label = document.createElement("strong"); label.textContent = "选择空方向落座："; boardControls.append(label);
       for (const player of state.players.filter(item => item.empty)) boardControls.append(addControl(boardMeta.seatNames[player.seat], "alt", () => socket.emit("take-seat", { seat: player.seat })));
       const hint = document.createElement("span"); hint.className = "setup-hint"; hint.textContent = "当前为离座状态，等价于观战"; boardControls.append(hint);
     } else {
-      boardControls.append(addControl("随机布阵", "alt", () => { selected = null; socket.emit("randomize-setup"); }, me?.ready), addControl("左右翻转", "alt", () => { selected = null; socket.emit("mirror-setup"); }, me?.ready), addControl(me?.ready ? "取消准备" : "完成布阵", "", () => { selected = null; socket.emit("toggle-ready"); }), addControl("离座观战", "alt", () => { selected = null; socket.emit("leave-seat"); }));
-      boardControls.append(addControl('保存阵型', 'alt', () => {
+      if(state.mode!=='random'&&state.mode!=='landlord')boardControls.append(addControl("随机布阵", "alt", () => { selected = null; socket.emit("randomize-setup"); }, me?.ready),addControl("左右翻转", "alt", () => { selected = null; socket.emit("mirror-setup"); }, me?.ready));
+      else if(state.mode==='landlord')boardControls.append(addControl("左右翻转", "alt", () => { selected = null; socket.emit("mirror-setup"); }, me?.ready));
+      boardControls.append(addControl(me?.ready ? "取消准备" : "完成布阵", "", () => { selected = null; socket.emit("toggle-ready"); }), addControl("离座观战", "alt", () => { selected = null; socket.emit("leave-seat"); }));
+      if(state.mode!=='random'&&state.mode!=='landlord')boardControls.append(addControl('保存阵型', 'alt', () => {
         const name = prompt('给阵型起个名字（最多保存三个）');
         if(name !== null) socket.emit('layout-save', {name});
       }, (state.layouts || []).length >= 3));
-      for (const layout of state.layouts || []) {
+      if(state.mode!=='random'&&state.mode!=='landlord')for (const layout of state.layouts || []) {
         const group = document.createElement('div'); group.className = 'layout-entry';
         group.append(addControl(`使用：${layout.name}`, 'alt', () => socket.emit('layout-load', {index:layout.index}), me?.ready),
           addControl('删除', 'alt', () => {if(confirm(`删除阵型「${layout.name}」？`)) socket.emit('layout-delete', {index:layout.index});}));
         boardControls.append(group);
       }
-      const hint = document.createElement("span"); hint.className = "setup-hint"; hint.textContent = me?.ready ? "等待其他玩家与房主开始" : "点击两枚棋子交换位置"; boardControls.append(hint);
+      const hint = document.createElement("span"); hint.className = "setup-hint"; hint.textContent = me?.ready ? "等待其他玩家与房主开始" : state.mode==='random'?"阵型已随机生成且不可修改":"点击两枚棋子交换位置"; boardControls.append(hint);
     }
   } else if (state.spectator && state.phase === "playing") {
     const badge = document.createElement("strong"); badge.textContent = state.rated ? "排位观战 · 开局后不可接替" : "观战模式 · 可接替空缺方向："; boardControls.append(badge);
@@ -949,6 +973,7 @@ async function openReplay(download) {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error);
     if (download) {
+      if (data.live) throw new Error('对局结束后才能下载完整棋谱');
       const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
       const link = document.createElement('a'); link.href = url; link.download = `junqi-${code}.json`; link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000); return;
@@ -957,11 +982,12 @@ async function openReplay(download) {
     const dialog = document.createElement('dialog'); dialog.id = 'replay-dialog'; dialog.className='replay-dialog';
     const toolbar = document.createElement('div'); toolbar.style.cssText = 'display:flex;gap:12px;align-items:center;flex-wrap:wrap';
     const label = document.createElement('span');
-    const slider = document.createElement('input'); slider.type = 'range'; slider.min = '0'; slider.max = String(data.frames.length - 1); slider.value = '0';
+    if (!data.frames?.length) throw new Error('暂无可查看的棋谱');
+    const slider = document.createElement('input'); slider.type = 'range'; slider.min = '0'; slider.max = String(data.frames.length - 1); slider.value = data.live ? slider.max : '0';
     const canvas = document.createElement('div');
     const show = () => {
       const index = Number(slider.value), live = state;
-      state = { ...live, ...data.frames[index].state, lastMove:null };
+      state = { ...live, ...data.frames[index].state };
       try {
         renderBoard(); const copy = boardSvg.cloneNode(true); copy.removeAttribute('id');
         copy.querySelectorAll('.piece-guess').forEach(el=>el.remove());
@@ -974,7 +1000,7 @@ async function openReplay(download) {
     };
     toolbar.append(addControl('上一步', 'alt', () => { slider.value = String(Math.max(0, Number(slider.value) - 1)); show(); }), slider,
       addControl('下一步', 'alt', () => { slider.value = String(Math.min(data.frames.length - 1, Number(slider.value) + 1)); show(); }), label,
-      addControl('关闭复盘', 'alt', () => dialog.close()));
+      addControl('关闭', 'alt', () => dialog.close()));
     slider.oninput = show;
     dialog.append(toolbar, canvas); document.body.append(dialog); dialog.showModal(); show();
   } catch (error) { showToast(error.message || '棋谱加载失败'); }
@@ -982,7 +1008,8 @@ async function openReplay(download) {
 function render() {
   if (!state) return;
   $("#room-code-label").textContent = `${state.name || state.code} (${state.code})`;
-  $("#mode-label").textContent = `${state.phase==='setup'?'自动计分':state.rated ? "Rated" : "不计分"} · ${state.mode === "alliance" ? "对家结盟" : "各自为战"}`;
+  const modeNames={alliance:'对家结盟',ffa:'四方混战',random:'随机布阵',landlord:'斗地主'},visibilityNames={dark:'暗棋',semi:'半明棋',light:'明棋'};
+  $("#mode-label").textContent = `${state.phase==='setup'?'自动计分':state.rated ? "Rated" : "不计分"} · ${modeNames[state.mode]||state.mode} · ${visibilityNames[state.visibility||'dark']}`;
   const phases = { setup: "布阵中", playing: "对局进行中", finished: "对局结束" };
   $("#phase-label").textContent = phases[state.phase];
   if (state.phase === "playing") {
@@ -993,7 +1020,7 @@ function render() {
   } else if (state.phase === "finished") {
     $("#turn-banner").textContent = state.drawn||state.aborted?state.winner:`${state.winner}获胜`;
   } else {
-    $("#turn-banner").textContent = "完成布阵并准备，等待房主开局";
+    $("#turn-banner").textContent = state.landlordCalling?'正在抢地主':state.mode==='landlord'&&!state.landlordSeat?'等待房主开始抢地主':"完成布阵并准备，等待房主开局";
   }
   if (state.spectator) $("#turn-banner").textContent = `${state.botDebugEnabled ? "BOT 调试观战 · 已显示全部棋子" : "正在观战"} · ${$("#turn-banner").textContent}`;
   renderPlayers();

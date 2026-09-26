@@ -36,7 +36,7 @@ test('参赛 BOT API：账号权限、暗棋、幂等、时限和独立程序双
   const hostToken = await account('ApiHost', 'human'), alpha = await account('AlphaBot', 'bot'), beta = await account('BetaBot', 'bot');
   const outsider = await account('OtherBot', 'bot');
   const changedLimit=await api('/api/admin/accounts/AlphaBot/bot-time-limit',{method:'PATCH',admin:true,body:{seconds:8}});
-  assert.equal(changedLimit.status,200);assert.equal(changedLimit.body.botTurnLimitMs,8000);
+  assert.equal(changedLimit.status,200);assert.equal(changedLimit.body.botLocalTurnLimitMs,8000);assert.equal(changedLimit.body.botServerTurnLimitMs,8000);
   assert.equal((await api('/api/admin/accounts/ApiHost/bot-time-limit',{method:'PATCH',admin:true,body:{seconds:8}})).status,400);
   assert.equal((await api('/api/bot/session')).status, 401);
   assert.equal((await api('/api/bot/session', { token: hostToken })).status, 403);

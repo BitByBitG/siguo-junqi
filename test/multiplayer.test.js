@@ -117,6 +117,8 @@ test("两名玩家可创建、加入、准备、开局并保持暗棋隔离", { 
     from: "north-1-0",
     to: "north-1-1",
     pieceId: moved.pieces.find((piece) => piece.owner === "north" && piece.position === "north-1-1").id,
+    seat: 'north',
+    ply: 1,
   });
 
   // Fully human games are now automatically Rated: no mid-game seat replacement.
@@ -222,6 +224,20 @@ test("两名玩家可创建、加入、准备、开局并保持暗棋隔离", { 
   ratedNorth.emit("start-game");
   await ratedStarted;
   assert.equal((await fetch(url + '/api/rooms/' + ratedRoom.code + '/replay')).status, 403);
+  const historyUrl=url+'/api/rooms/'+ratedRoom.code+'/replay';
+  assert.equal((await fetch(historyUrl,{headers:{Authorization:`Bearer ${northToken}`}})).status,403);
+  const northHistory=await(await fetch(historyUrl,{headers:{Authorization:`Bearer ${ratedNorthToken}`}})).json();
+  const southHistory=await(await fetch(historyUrl,{headers:{Authorization:`Bearer ${ratedSouthToken}`}})).json();
+  assert.equal(northHistory.live,true);
+  assert.equal(northHistory.frames[0].state.pieces.some(p=>p.owner==='south'&&p.type!==null),false);
+  assert.equal(southHistory.frames[0].state.pieces.some(p=>p.owner==='north'&&p.type!==null),false);
+  assert.equal('logs' in northHistory,false);
+  const historyMove=waitEvent(ratedNorth,'room-state',room=>room.ply===1);
+  ratedNorth.emit('move',{from:'north-1-0',to:'north-1-1'});
+  await historyMove;
+  const movedHistory=await(await fetch(historyUrl,{headers:{Authorization:`Bearer ${ratedSouthToken}`}})).json();
+  assert.deepEqual(movedHistory.frames.at(-1).state.lastMove.path,['north-1-0','north-1-1']);
+  assert.equal(movedHistory.frames.at(-1).state.pieces.some(p=>p.owner==='north'&&p.type!==null),false);
   const cannotLeaveSeat = waitEvent(ratedSouth, "game-error", message => message.includes("排位"));
   ratedSouth.emit("leave-seat");
   await cannotLeaveSeat;

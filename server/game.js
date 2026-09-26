@@ -17,6 +17,7 @@ export const SEAT_COLORS = {
 };
 
 export const PIECE_INFO = {
+  marshal: { name: "元帅", rank: 10, count: 0 },
   flag: { name: "军旗", rank: 0, count: 1, immobile: true },
   commander: { name: "司令", rank: 9, count: 1 },
   army: { name: "军长", rank: 8, count: 1 },
@@ -27,8 +28,10 @@ export const PIECE_INFO = {
   company: { name: "连长", rank: 3, count: 3 },
   platoon: { name: "排长", rank: 2, count: 3 },
   engineer: { name: "工兵", rank: 1, count: 3 },
+  missile: { name: "导弹", rank: 4.5, count: 0 },
   mine: { name: "地雷", rank: 0, count: 3, immobile: true },
   bomb: { name: "炸弹", rank: 0, count: 2 },
+  fortress: { name: "堡垒", rank: 0, count: 0, immobile: true },
 };
 
 const CAMP_CELLS = new Set(["1,1", "1,3", "2,2", "3,1", "3,3"]);
@@ -245,23 +248,26 @@ export function createArmy(seat) {
   return pieces;
 }
 
-export function validateSetup(pieces, seat) {
+export function validateSetup(pieces, seat, room = null) {
   const own = pieces.filter((piece) => piece.owner === seat && piece.position);
-  if (own.length !== 25 || new Set(own.map((piece) => piece.position)).size !== 25) {
-    return { ok: false, message: "必须摆放全部 25 枚棋子" };
+  const landlord = room?.mode === 'landlord' && room.landlordSeat === seat;
+  const expected = landlord ? 35 : 25;
+  if (own.length !== expected || new Set(own.map((piece) => piece.position)).size !== expected) {
+    return { ok: false, message: `必须摆放全部 ${expected} 枚棋子` };
   }
   for (const piece of own) {
     const node = BOARD.byId.get(piece.position);
-    if (!node || node.seat !== seat || node.kind === "camp") {
-      return { ok: false, message: "棋子只能放在己方非行营位置" };
+    const legalLandlordNode = landlord && (node?.seat === seat || !node?.seat);
+    if (!node || (landlord ? !legalLandlordNode : node.seat !== seat || node.kind === "camp")) {
+      return { ok: false, message: landlord ? "地主只能在己方区域和中央九宫格布阵" : "棋子只能放在己方非行营位置" };
     }
     if (piece.type === "flag" && node.kind !== "hq") {
       return { ok: false, message: "军旗必须放在大本营" };
     }
-    if (piece.type === "mine" && node.row < 4) {
+    if (!landlord && piece.type === "mine" && node.row < 4) {
       return { ok: false, message: "地雷只能放在最后两排" };
     }
-    if (piece.type === "bomb" && node.row === 0) {
+    if (!landlord && piece.type === "bomb" && node.row === 0) {
       return { ok: false, message: "炸弹不能放在第一排" };
     }
   }
@@ -327,7 +333,10 @@ export function validateMove(room, seat, from, to) {
   }
   if (defender?.owner === seat) return { ok: false, message: "目标位置已有己方棋子" };
   if (defender && target.kind === "camp") return { ok: false, message: "行营中的棋子不能被攻击" };
-  if (defender && room.mode === "alliance" && sameTeam(attacker.owner, defender.owner)) {
+  const allied = room.mode === 'landlord'
+    ? attacker.owner !== room.landlordSeat && defender?.owner !== room.landlordSeat
+    : room.mode === "alliance" && defender && sameTeam(attacker.owner, defender.owner);
+  if (defender && allied) {
     return { ok: false, message: "不能攻击盟友" };
   }
 
@@ -335,12 +344,13 @@ export function validateMove(room, seat, from, to) {
   const rail = BOARD.rails.has(edgeKey(from, to)) || BOARD.railNeighbors.get(from).length > 0;
   if (direct) return { ok: true, attacker, defender, engineerTurn: false };
   if (!rail || !BOARD.railNeighbors.get(to).length) return { ok: false, message: "两点之间没有道路" };
-  const reachable = attacker.type === "engineer"
+  const turningPiece = attacker.type === "engineer" || attacker.type === "missile";
+  const reachable = turningPiece
     ? isEngineerRailPath(from, to, room.pieces, activeSeatSet)
     : isStraightRailPath(from, to, room.pieces, activeSeatSet);
   return reachable
-    ? { ok: true, attacker, defender, engineerTurn: attacker.type === "engineer" && engineerNeedsTurn(from, to, room.pieces, activeSeatSet) }
-    : { ok: false, message: attacker.type === "engineer" ? "铁路路线被阻挡" : "只有工兵能在铁路上转弯" };
+    ? { ok: true, attacker, defender, engineerTurn: turningPiece && engineerNeedsTurn(from, to, room.pieces, activeSeatSet) }
+    : { ok: false, message: turningPiece ? "铁路路线被阻挡" : "只有工兵和导弹能在铁路上转弯" };
 }
 
 export function sameTeam(a, b) {
@@ -357,16 +367,59 @@ export function hasLegalMove(room, seat) {
 export function resolveBattle(attacker, defender) {
   if (!defender) return "move";
   if (attacker.type === "bomb" || defender.type === "bomb") return "both";
+  if (defender.type === "fortress") return "defender";
   if (defender.type === "flag") return "attacker";
   if (defender.type === "mine") return attacker.type === "engineer" ? "attacker" : "defender";
+  if (attacker.type === "missile") return PIECE_INFO[defender.type].rank <= PIECE_INFO.battalion.rank ? "attacker" : "both";
+  if (defender.type === "missile") return PIECE_INFO[attacker.type].rank <= PIECE_INFO.battalion.rank ? "defender" : "both";
   const a = PIECE_INFO[attacker.type].rank;
   const d = PIECE_INFO[defender.type].rank;
   if (a === d) return "both";
   return a > d ? "attacker" : "defender";
 }
 
+function piecesOf(owner, types) {
+  return types.map(type => ({id:crypto.randomUUID(),owner,type,position:null,revealed:false}));
+}
+
+function placeLandlordArmy(pieces, seat, landlord) {
+  const cells = BOARD.nodes.filter(node => landlord ? node.seat === seat || !node.seat : node.seat === seat && node.kind !== 'camp').map(node => node.id);
+  const flag = pieces.find(piece => piece.type === 'flag');
+  flag.position = shuffled([nodeId(seat,5,1),nodeId(seat,5,3)])[0];
+  const used=new Set([flag.position]);
+  if(!landlord){
+    const mines=pieces.filter(piece=>piece.type==='mine'),rear=shuffled(cells.filter(id=>BOARD.byId.get(id).row>=4&&!used.has(id)));
+    for(const piece of mines){piece.position=rear.pop();used.add(piece.position);}
+    const bombs=pieces.filter(piece=>piece.type==='bomb'),safe=shuffled(cells.filter(id=>BOARD.byId.get(id).row>0&&!used.has(id)));
+    for(const piece of bombs){piece.position=safe.pop();used.add(piece.position);}
+  }
+  const free = shuffled(cells.filter(id => !used.has(id)));
+  for (const piece of pieces) if (!piece.position) piece.position = free.pop();
+  return pieces;
+}
+
+export function createLandlordArmies(seats, landlordSeat) {
+  const common=[];
+  for(const [type,info] of Object.entries(PIECE_INFO))if(info.count)for(let army=0;army<4;army++)for(let i=0;i<info.count;i++)if(type!=='flag')common.push(type);
+  let dealt;
+  do {const pool=shuffled(common);dealt=seats.map(()=>pool.splice(0,19));dealt.push(pool);} while(dealt.slice(0,4).some(hand=>hand.filter(type=>type==='mine').length>=10));
+  const result=[];
+  for(let i=0;i<seats.length;i++){
+    const seat=seats[i];
+    if(seat===landlordSeat){
+      const specials=Array.from({length:14},()=>shuffled(['marshal','missile','fortress'])[0]);
+      result.push(...placeLandlordArmy(piecesOf(seat,['flag',...dealt[4],...specials]),seat,true));
+    }else{
+      const army=placeLandlordArmy(piecesOf(seat,['flag',...dealt[i],...Array(5).fill('platoon')]),seat,false);
+      result.push(...army);
+    }
+  }
+  return result;
+}
+
 export function revealFlagWhenCommanderDies(room, piece) {
   if (!piece || piece.type !== "commander") return;
+  if(room.mode==='landlord'&&piece.owner===room.landlordSeat)return;
   const flag = room.pieces.find((item) => item.owner === piece.owner && item.type === "flag" && item.position);
   if (flag) flag.revealed = true;
 }
