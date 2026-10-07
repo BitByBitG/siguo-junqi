@@ -1,4 +1,4 @@
-import {colorRating} from './rating-colors.js';
+import {colorRating, colorUnrated} from './rating-colors.js';
 import {renderRichChatBody} from './chat-common.js';
 import "/secure.js";
 const rankingBody = document.querySelector("#ranking-body");
@@ -35,16 +35,19 @@ fetch("/api/ratings"+(botRanking?'?type=bot':''))
     }
     for (const account of accounts) {
       const row = document.createElement("tr");
+      const rated = account.ratedGames > 0;
+      const ratingText = rated ? account.rating : 'unrated';
+      const rankText = rated ? account.rank : 'unrated';
       row.append(
         textCell(account.position, "ranking-position"),
-        colorRating(textCell(account.username, "ranking-name"), account.rating),
+        (rated ? colorRating : colorUnrated)(textCell(account.username, "ranking-name"), account.rating),
         signatureCell(account.signature),
-        colorRating(textCell(account.rank, "rank-badge"), account.rating),
-        colorRating(textCell(account.rating, "ranking-rating"), account.rating),
+        (rated ? colorRating : colorUnrated)(textCell(rankText, "rank-badge"), account.rating),
+        (rated ? colorRating : colorUnrated)(textCell(ratingText, "ranking-rating"), account.rating),
         textCell(account.ratedGames),
-        colorRating(textCell(account.peakRating), account.peakRating),
+        rated ? colorRating(textCell(account.peakRating), account.peakRating) : colorUnrated(textCell('unrated')),
       );
-      const name=row.children[1],a=document.createElement('a');a.textContent=account.username;a.href='/profile/'+encodeURIComponent(account.username);colorRating(a,account.rating);name.replaceChildren(a);
+      const name=row.children[1],a=document.createElement('a');a.textContent=account.username;a.href='/profile/'+encodeURIComponent(account.username);(rated ? colorRating : colorUnrated)(a,account.rating);name.replaceChildren(a);
       rankingBody.append(row);
     }
   })

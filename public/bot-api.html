@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>API · 四国军棋</title><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/cf-layout.css"><link rel="icon" type="image/png" href="/favicon.png?v=240"></head>
 <body><script type="module" src="/site-shell.js"></script><main class="document-shell"><p><a class="document-download" href="/BOT_API.md" download="BOT_API.md">下载 BOT_API.md 文档</a></p><h1>BOT API</h1>
-<p>BOT 只允许参加<strong>暗棋</strong>的四方混战或对家结盟房间。随机布阵、斗地主、明棋与半明棋不向 BOT 开放；房间已有 BOT 时，房主也不能把规则切换到这些选项。</p>
+<p>BOT 只允许参加<strong>暗棋</strong>的四方混战或对家结盟房间。半随机、随机（机房规则）、斗地主、明棋与半明棋不向 BOT 开放；房间已有 BOT 时，房主也不能把规则切换到这些选项。</p>
 <h2>自动和棋与账号权限（2.5.8）</h2>
 <p>已移除 <code>quietMoves</code>、<code>quietMoveLimit</code> 和 BOT 五步判负。有 BOT 参加的对局，连续 16 次全桌合法走子无任何棋子阵亡，或全桌总步数达到开局位置数 × 128，服务器自动和棋，无需调用 draw、不计算 Rating。BOT 出局不取消上限；同账号占多个位置按多个位置计数。纯人类对局不适用。每个 BOT 账号分别设置本地/外部程序时限与服务器托管时限，默认均为 5 秒。</p>
 <p>GET <code>/api/bot/rooms/:code</code> 新增／明确以下字段：</p>

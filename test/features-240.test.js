@@ -27,8 +27,8 @@ test('history, avatars, automatic rating pools, unanimous draws and admin contro
  async function room(){const s=await connect(),state=await command(s,'create-room',{authToken:auth.Host.token,capacity:2,mode:'ffa',rated:false});return {s,code:state.code};}
  async function humans(){const r=await room(),other=await connect();let v=await command(other,'join-room',{authToken:auth.Guest.token,code:r.code});if(!v.viewerSeat)await command(other,'take-seat',{seat:'south'},v=>v.viewerSeat==='south');await command(r.s,'toggle-ready',undefined,v=>v.players.find(p=>p.seat==='north').ready);await command(other,'toggle-ready',undefined,v=>v.players.find(p=>p.seat==='south').ready);await command(r.s,'start-game',undefined,v=>v.phase==='playing');return {...r,other};}
  const first=await humans();
- let pending=wait(first.s,'room-state',v=>v.phase==='finished');first.other.emit('resign');let state=await pending;assert.equal(state.rated,true);assert.equal(state.ratingChanges.north.delta,128);assert.equal(state.ratingChanges.south.delta,-128);
- const profile=(await api('/api/profile/Host')).body;assert.equal(profile.history.length,1);assert.equal(profile.rating,1628);
+ let pending=wait(first.s,'room-state',v=>v.phase==='finished');first.other.emit('resign');let state=await pending;assert.equal(state.rated,true);assert.equal(state.ratingChanges.north.delta,256);assert.equal(state.ratingChanges.south.delta,-230);
+ const profile=(await api('/api/profile/Host')).body;assert.equal(profile.history.length,1);assert.equal(profile.rating,1756);
  await command(first.s,'chat-message',{text:'保留聊天'},v=>v.chat.some(m=>m.text==='保留聊天'));
  const replay=(await api('/api/rooms/'+first.code+'/replay','GET',undefined,auth.Host.token)).body;assert.ok(replay.frames.length>=2);assert.equal(replay.chat[0].text,'保留聊天');const frameCount=replay.frames.length;
  await command(first.s,'close-room',undefined,v=>v.phase==='finished');assert.ok((await api('/api/rooms')).body.some(r=>r.code===first.code));
@@ -43,8 +43,8 @@ test('history, avatars, automatic rating pools, unanimous draws and admin contro
  assert.equal(state.drawn,true);assert.equal(state.ratingChanges,null);assert.equal((await api('/api/profile/Host')).body.history.length,1);
  async function botAction(code,name,action,extra={},seat){const session=(await api('/api/bot/session','GET',undefined,auth[name].token)).body;const assignment=session.assignments.find(a=>a.code===code&&(!seat||a.seat===seat));assert.ok(assignment,JSON.stringify(session));const v=(await api('/api/bot/rooms/'+code+'?assignmentId='+assignment.assignmentId,'GET',undefined,auth[name].token)).body;const r=await api('/api/bot/rooms/'+code+'/'+action,'POST',{assignmentId:assignment.assignmentId,revision:v.revision,requestId:crypto.randomUUID(),...extra},auth[name].token);assert.equal(r.status,200,JSON.stringify(r));return v;}
  const bots=await room();await command(bots.s,'leave-seat',undefined,v=>v.spectator);await command(bots.s,'add-bot',{seat:'north',username:'BotOne'},v=>v.players.some(p=>p.isBot));await command(bots.s,'add-bot',{seat:'south',username:'BotTwo'},v=>v.players.every(p=>p.isBot));await botAction(bots.code,'BotOne','ready',{ready:true});await botAction(bots.code,'BotTwo','ready',{ready:true});state=await command(bots.s,'start-game',undefined,v=>v.phase==='playing');assert.equal(state.rated,true);
- pending=wait(bots.s,'room-state',v=>v.phase==='finished');await botAction(bots.code,'BotTwo','resign');state=await pending;assert.equal(state.ratingChanges.north.delta,128);
- assert.equal((await api('/api/profile/BotOne')).body.rating,1628);assert.equal((await api('/api/ratings?type=bot')).body.length,2);assert.ok((await api('/api/ratings')).body.every(p=>p.accountType==='human'));
+ pending=wait(bots.s,'room-state',v=>v.phase==='finished');await botAction(bots.code,'BotTwo','resign');state=await pending;assert.equal(state.ratingChanges.north.delta,256);
+ assert.equal((await api('/api/profile/BotOne')).body.rating,1756);assert.equal((await api('/api/ratings?type=bot')).body.length,2);assert.ok((await api('/api/ratings')).body.every(p=>p.accountType==='human'));
  const mixed=await room();await command(mixed.s,'add-bot',{seat:'south',username:'BotTwo'},v=>v.players.some(p=>p.isBot));await command(mixed.s,'toggle-ready',undefined,v=>v.players.find(p=>p.seat==='north').ready);await botAction(mixed.code,'BotTwo','ready',{ready:true});state=await command(mixed.s,'start-game',undefined,v=>v.phase==='playing');assert.equal(state.rated,false);
  pending=wait(mixed.s,'room-state',v=>v.phase==='finished');await botAction(mixed.code,'BotTwo','resign');await pending;assert.equal((await api('/api/profile/Host')).body.history.length,1);
  for(const drawGame of [true,false]){
@@ -58,7 +58,7 @@ test('history, avatars, automatic rating pools, unanimous draws and admin contro
      assert.equal((await api('/api/profile/BotOne')).body.ratedGames,1);
    }else{
      pending=wait(r.s,'room-state',v=>v.phase==='finished');await botAction(r.code,'BotOne','resign',{},'south');await pending;
-     const p=(await api('/api/profile/BotOne')).body;assert.equal(p.ratedGames,2);assert.equal(p.rating,1628);assert.equal(p.history.at(-1).delta,0);
+     const p=(await api('/api/profile/BotOne')).body;assert.equal(p.ratedGames,2);assert.equal(p.rating,1756);assert.equal(p.history.at(-1).delta,0);
    }
  }
  const interrupted=await humans();assert.equal((await api('/api/admin/rooms/'+interrupted.code+'/finish','POST',{},auth.Guest.token)).status,403);assert.equal((await api('/api/admin/rooms/'+interrupted.code+'/finish','POST',{},auth.Host.token)).status,200);assert.equal((await api('/api/profile/Host')).body.history.length,1);
@@ -68,7 +68,7 @@ test('history, avatars, automatic rating pools, unanimous draws and admin contro
  assert.equal((await api('/api/rooms')).body.length,7);assert.equal((await api('/api/avatar/Host')).body.data,png);
  assert.equal((await api('/api/admin/rooms/'+first.code+'/chat','DELETE',undefined,null,true)).status,200);
  assert.equal((await api('/api/admin/rooms/'+first.code,'DELETE',undefined,null,true)).status,200);assert.equal((await api('/api/rooms')).body.length,6);
- assert.equal((await api('/api/profile/Host')).body.rating,1628);
+ assert.equal((await api('/api/profile/Host')).body.rating,1756);
  assert.equal((await api('/api/avatar','DELETE')).status,401);
  const relogged=(await api('/api/login','POST',{username:'Host',password:'test1234'})).body;
  assert.equal((await api('/api/avatar','DELETE',undefined,relogged.token)).status,200);

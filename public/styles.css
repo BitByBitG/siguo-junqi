@@ -451,7 +451,9 @@ select { padding: 0 0.8rem; }
 
 .rank-badge { display:block; width:max-content; margin-top:.25rem; font-size:.68rem; font-weight:700; }
 .rank-recruit, .rank-provisional { color:#999; }
+.rank-warrant { color:#729dff; }
 .cf-rated { display:inline-block; font-weight:700; text-shadow:none; }
+.cf-unrated { color:#888 !important; font-weight:400; }
 .cf-rated[data-cf="gray"] { color:#808080 !important; }
 .cf-rated[data-cf="green"] { color:#008000 !important; }
 .cf-rated[data-cf="cyan"] { color:#03a89e !important; }
@@ -459,6 +461,14 @@ select { padding: 0 0.8rem; }
 .cf-rated[data-cf="violet"] { color:#a0a !important; }
 .cf-rated[data-cf="orange"] { color:#ff8c00 !important; }
 .cf-rated[data-cf="red"], .cf-rated[data-cf="legendary"] { color:#f00 !important; }
+.cf-rated[data-cf="black-red"] { color:#f00 !important; }
+.cf-rated[data-cf="black-red"]::first-letter { color:#050505 !important; }
+.cf-rated[data-cf="copper-red"] { color:#f00 !important; }
+.cf-rated[data-cf="copper-red"]::first-letter { color:#b87333 !important; }
+.cf-rated[data-cf="silver-red"] { color:#f00 !important; }
+.cf-rated[data-cf="silver-red"]::first-letter { color:#bfc4cc !important; }
+.cf-rated[data-cf="gold-red"] { color:#f00 !important; }
+.cf-rated[data-cf="gold-red"]::first-letter { color:#d8a928 !important; }
 .cf-rated[data-cf="legendary"]::first-letter { color:#9aa4b1 !important; text-shadow:none; }
 .cf-rated[data-cf="tourist"] { color:#a0adb9 !important; text-shadow:none; }
 .foldable-message { line-height:1.6; max-height:16em; overflow:hidden; }
@@ -475,6 +485,7 @@ select { padding: 0 0.8rem; }
 .rank-colonel { color:#d88bea; }
 .rank-general { color:#ff856f; }
 .rank-marshal { color:#ff5b7f; text-shadow:0 0 8px rgba(255,60,100,.55); }
+.rank-grand-marshal { color:#d8a928; text-shadow:0 0 8px rgba(216,169,40,.45); }
 .rating-delta { display:block; margin-top:.25rem; font-weight:800; }
 .rating-delta.up { color:#7fd88a; }
 .rating-delta.down { color:#e77b72; }

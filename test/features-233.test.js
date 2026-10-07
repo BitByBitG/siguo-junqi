@@ -14,7 +14,7 @@ const wait = (socket,event,predicate=()=>true) => new Promise((resolve,reject)=>
   socket.on(event,handler);
 });
 test('CF boundary colors',()=>{
-  const cases=[[1199,'gray'],[1200,'green'],[1399,'green'],[1400,'cyan'],[1600,'blue'],[1900,'violet'],[2100,'orange'],[2399,'orange'],[2400,'red'],[2999,'red'],[3000,'legendary'],[3500,'legendary'],[3999,'legendary'],[4000,'tourist']];
+  const cases=[[1199,'gray'],[1200,'green'],[1399,'green'],[1400,'cyan'],[1600,'blue'],[1900,'violet'],[2100,'orange'],[2399,'orange'],[2400,'red'],[2999,'red'],[3000,'black-red'],[3199,'black-red'],[3200,'copper-red'],[3499,'copper-red'],[3500,'silver-red'],[4999,'silver-red'],[5000,'gold-red'],[8000,'gold-red']];
   for(const [rating,color] of cases)assert.equal(ratingClass(rating),color);
 });
 test('announcements, private layouts, room names and undo over encrypted transport', {timeout:60000}, async t=>{
@@ -29,7 +29,7 @@ test('announcements, private layouts, room names and undo over encrypted transpo
   for(const [username,type] of [['PlayerOne','human'],['PlayerTwo','human'],['AdminOne','admin']]){
     assert.equal((await api('/api/admin/accounts','POST',{username,password:'secret123',accountType:type},null,true)).status,201);
     const logged=await api('/api/login','POST',{username,password:'secret123'});auth.push(logged.body);
-    assert.equal(logged.body.rating,1500);assert.equal(logged.body.rank,'军士长');assert.equal(logged.body.rankClass,'cyan');
+    assert.equal(logged.body.rating,1500);assert.equal(logged.body.rank,'准尉');assert.equal(logged.body.rankClass,'cyan');
   }
   assert.equal((await api('/api/announcements')).status,200);
   assert.equal((await api('/api/announcements','POST',{text:'denied'},auth[0].token)).status,403);

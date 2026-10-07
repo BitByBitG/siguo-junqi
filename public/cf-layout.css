@@ -324,6 +324,8 @@ h2,h3,h4 { color:var(--ink); }
 .theme-light .cf-rated[data-cf="tourist"]{color:#000!important;text-shadow:none!important}
 .theme-light .cf-rated[data-cf="legendary"]{color:#f00!important}
 .theme-light .cf-rated[data-cf="legendary"]::first-letter{color:#000!important;text-shadow:none!important}
+.theme-light .cf-unrated{color:#000!important}
+.theme-light .cf-rated[data-cf="black-red"]::first-letter{color:#000!important}
 .theme-light .brand-panel{color:#222;background:#fff;border-color:#aaa}
 .theme-light .brand-copy,.theme-light .home-rules p,.theme-light .home-rules li,
 .theme-light .field-label,.theme-light label>span,.theme-light .rule-chips span{color:#444}

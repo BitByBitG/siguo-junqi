@@ -248,26 +248,49 @@ export function createArmy(seat) {
   return pieces;
 }
 
+// 机房规则：25 枚标准棋子只避开行营，其余布阵限制全部忽略。
+export function createMachineRoomArmy(seat) {
+  const types = [];
+  for (const [type, info] of Object.entries(PIECE_INFO)) {
+    for (let i = 0; i < info.count; i += 1) types.push(type);
+  }
+  const positions = shuffled(BOARD.nodes
+    .filter((node) => node.seat === seat && node.kind !== "camp")
+    .map((node) => node.id));
+  return shuffled(types).map((type, index) => ({
+    id: crypto.randomUUID(), owner: seat, type, position: positions[index], revealed: false,
+  }));
+}
+
+export function machineRoomFlagCanReroll(pieces, seat) {
+  const flag = pieces.find((piece) => piece.owner === seat && piece.type === "flag" && piece.position);
+  const node = flag && BOARD.byId.get(flag.position);
+  if (!node) return false;
+  return node.row <= 1 || (node.row <= 3 && BOARD.railNeighbors.get(node.id).length > 0);
+}
+
 export function validateSetup(pieces, seat, room = null) {
   const own = pieces.filter((piece) => piece.owner === seat && piece.position);
   const landlord = room?.mode === 'landlord' && room.landlordSeat === seat;
-  const expected = landlord ? 35 : 25;
+  const expected = landlord ? 39 : 25;
   if (own.length !== expected || new Set(own.map((piece) => piece.position)).size !== expected) {
     return { ok: false, message: `必须摆放全部 ${expected} 枚棋子` };
   }
   for (const piece of own) {
     const node = BOARD.byId.get(piece.position);
+    const landlordMode=room?.mode==='landlord';
     const legalLandlordNode = landlord && (node?.seat === seat || !node?.seat);
-    if (!node || (landlord ? !legalLandlordNode : node.seat !== seat || node.kind === "camp")) {
+    const legalFarmerNode=landlordMode&&!landlord&&node?.seat===seat;
+    if (!node || (landlord ? !legalLandlordNode : landlordMode ? !legalFarmerNode : node.seat !== seat || node.kind === "camp")) {
       return { ok: false, message: landlord ? "地主只能在己方区域和中央九宫格布阵" : "棋子只能放在己方非行营位置" };
     }
-    if (piece.type === "flag" && node.kind !== "hq") {
+    if (room?.mode !== 'machine_random' && piece.type === "flag" && node.kind !== "hq") {
       return { ok: false, message: "军旗必须放在大本营" };
     }
-    if (!landlord && piece.type === "mine" && node.row < 4) {
+    if (!landlord && room?.mode !== 'machine_random' && piece.type === "mine" && node.row < 4) {
       return { ok: false, message: "地雷只能放在最后两排" };
     }
-    if (!landlord && piece.type === "bomb" && node.row === 0) {
+    if (!landlord && room?.mode !== 'machine_random' && piece.type === "bomb" && node.row === 0) {
       return { ok: false, message: "炸弹不能放在第一排" };
     }
   }
@@ -328,7 +351,7 @@ export function validateMove(room, seat, from, to) {
   const activeSeatSet = new Set(room.activeSeats || SEATS);
   if (!attacker || attacker.owner !== seat) return { ok: false, message: "请选择自己的棋子" };
   if (!canEnterNode(to, activeSeatSet)) return { ok: false, message: "不能进入无人阵营" };
-  if (PIECE_INFO[attacker.type].immobile || source.kind === "hq") {
+  if (PIECE_INFO[attacker.type].immobile || (source.kind === "hq" && room.mode !== 'machine_random')) {
     return { ok: false, message: "这枚棋子不能移动" };
   }
   if (defender?.owner === seat) return { ok: false, message: "目标位置已有己方棋子" };
@@ -398,23 +421,35 @@ function placeLandlordArmy(pieces, seat, landlord) {
   return pieces;
 }
 
-export function createLandlordArmies(seats, landlordSeat) {
+export function createLandlordDeal(seats) {
   const common=[];
   for(const [type,info] of Object.entries(PIECE_INFO))if(info.count)for(let army=0;army<4;army++)for(let i=0;i<info.count;i++)if(type!=='flag')common.push(type);
   let dealt;
   do {const pool=shuffled(common);dealt=seats.map(()=>pool.splice(0,19));dealt.push(pool);} while(dealt.slice(0,4).some(hand=>hand.filter(type=>type==='mine').length>=10));
+  const pieces=[];
+  for(let i=0;i<seats.length;i++)pieces.push(...placeLandlordArmy(piecesOf(seats[i],['flag',...dealt[i]]),seats[i],false));
+  return {pieces,reserve:dealt[4]};
+}
+
+export function completeLandlordDeal(basePieces, reserve, seats, landlordSeat) {
   const result=[];
-  for(let i=0;i<seats.length;i++){
-    const seat=seats[i];
+  const bonusPool=shuffled([...(reserve||[]),'marshal','missile','fortress']);
+  const landlordBonus=bonusPool.slice(0,19);
+  for(const seat of seats){
+    const hand=basePieces.filter(piece=>piece.owner===seat).map(piece=>piece.type);
     if(seat===landlordSeat){
-      const specials=Array.from({length:14},()=>shuffled(['marshal','missile','fortress'])[0]);
-      result.push(...placeLandlordArmy(piecesOf(seat,['flag',...dealt[4],...specials]),seat,true));
+      result.push(...placeLandlordArmy(piecesOf(seat,[...hand,...landlordBonus]),seat,true));
     }else{
-      const army=placeLandlordArmy(piecesOf(seat,['flag',...dealt[i],...Array(5).fill('platoon')]),seat,false);
+      const army=placeLandlordArmy(piecesOf(seat,[...hand,...Array(5).fill('platoon')]),seat,false);
       result.push(...army);
     }
   }
   return result;
+}
+
+export function createLandlordArmies(seats, landlordSeat) {
+  const deal=createLandlordDeal(seats);
+  return completeLandlordDeal(deal.pieces,deal.reserve,seats,landlordSeat);
 }
 
 export function revealFlagWhenCommanderDies(room, piece) {

@@ -34,7 +34,7 @@
       import {addSelection,installBatch} from '/admin-batch.js';
       import {copySourceButton,renderMutedUsers} from '/chat-controls.js';
       import {renderRichChatBody,attachChatFold,releaseChatFolds} from "/chat-common.js";
-      import {colorRating} from '/rating-colors.js';
+      import {colorRating, colorUnrated} from '/rating-colors.js';
       import {avatarImage,messageTime} from '/avatars.js';
       function messageHeader(item){const span=document.createElement('span');span.className='chat-meta';if(localStorage.getItem('junqi-chat-avatars')!=='0'){const al=document.createElement('a');al.href='/profile/'+encodeURIComponent(item.name);al.className='avatar-profile-link';al.append(avatarImage(item.name,item.avatar));span.append(al);}const name=document.createElement('a');name.href='/profile/'+encodeURIComponent(item.name);name.textContent=item.name;colorRating(name,item.rating??1500);span.append(name);const time=messageTime(item.time);if(time)span.append(time);return span;}
       import {displayImage} from "/chat-images.js";
@@ -233,10 +233,10 @@
             const username = account.username;
             const row = document.createElement("div");
             row.className = `account-row ${account.accountType==='bot'?'bot-account':'human-account'}`;
-            const name = document.createElement("span"),profile=document.createElement('a');profile.href='/profile/'+encodeURIComponent(username);profile.textContent=username;colorRating(profile,account.rating);const runtime=account.accountType==='bot'?` · 运行：${account.runtimeMode==='server'?'服务器托管':account.runtimeMode==='external'?'本地/外部程序':account.runtimeMode==='mixed'?'服务器托管 + 外部连接':'离线'}${account.botServerHostingDisabled?' · 禁止服务器托管':''}`:'';name.append(profile,document.createTextNode(` · ${account.admin ? "管理员账号" : account.accountType === "bot" ? "BOT 账号" : "玩家账号"} · ${account.rank} · ${account.rating}（${account.ratedGames} 局，最高 ${account.peakRating}）${account.blocked?' · 已封禁':''}${account.globallyMuted?' · 已全站禁言':''}${runtime}`));
+            const name = document.createElement("span"),profile=document.createElement('a');profile.href='/profile/'+encodeURIComponent(username);profile.textContent=username;(account.ratedGames>0?colorRating:colorUnrated)(profile,account.rating);const runtime=account.accountType==='bot'?` · 运行：${account.runtimeMode==='server'?'服务器托管':account.runtimeMode==='external'?'本地/外部程序':account.runtimeMode==='mixed'?'服务器托管 + 外部连接':'离线'}${account.botServerHostingDisabled?' · 禁止服务器托管':''}`:'';name.append(profile,document.createTextNode(` · ${account.admin ? "管理员账号" : account.accountType === "bot" ? "BOT 账号" : "玩家账号"} · ${account.ratedGames>0?account.rank+' · '+account.rating:'unrated'}（${account.ratedGames} 局，最高 ${account.ratedGames>0?account.peakRating:'unrated'}）${account.blocked?' · 已封禁':''}${account.globallyMuted?' · 已全站禁言':''}${runtime}`));
             const ratingInput = document.createElement("input");
             ratingInput.className = "rating-input"; ratingInput.type = "number";
-            ratingInput.min = "-100"; ratingInput.max = "8000"; ratingInput.value = account.rating;
+              ratingInput.min = "0"; ratingInput.max = "8000"; ratingInput.value = account.rating;
             const saveRating = document.createElement("button");
             saveRating.type = "button"; saveRating.className = "icon-button"; saveRating.textContent = "改分";
             saveRating.onclick = async () => {

@@ -1,5 +1,5 @@
 import '/secure.js';
-import {colorRating} from './rating-colors.js';
+import {colorRating, colorUnrated} from './rating-colors.js';
 function currentTheme(){return localStorage.getItem('junqi-theme')==='light'?'light':'dark';}
 let lightFavicon=null,faviconGeneration=0;
 function faviconLinks(){let links=[...document.querySelectorAll('link[rel~="icon"]')];if(!links.length){const link=document.createElement('link');link.rel='icon';link.type='image/png';document.head.append(link);links=[link];}return links;}
@@ -23,7 +23,7 @@ function render(){
   header.querySelector('.site-brand').href=auth?.accountType==='bot'?'/bot-studio.html':'/';
   const themeButton=document.createElement('button');themeButton.type='button';themeButton.className='text-action theme-toggle';themeButton.textContent=currentTheme()==='light'?'深色模式':'浅色模式';themeButton.setAttribute('aria-pressed',String(currentTheme()==='light'));themeButton.onclick=()=>{localStorage.setItem('junqi-theme',currentTheme()==='light'?'dark':'light');applyTheme();window.dispatchEvent(new Event('junqi-theme'));render();};actions.append(themeButton);
   if(auth?.token){
-    const name=colorRating(link(auth.username,auth.accountType==='bot'?'/bot-studio.html':'/profile/'+encodeURIComponent(auth.username)),auth.rating);actions.append(name);if(auth.accountType!=='bot')actions.append(link('设置','/settings.html'));
+    const rated=auth.ratedGames>0;const name=(rated?colorRating:colorUnrated)(link(auth.username,auth.accountType==='bot'?'/bot-studio.html':'/profile/'+encodeURIComponent(auth.username)),auth.rating);actions.append(name);if(auth.accountType!=='bot')actions.append(link('设置','/settings.html'));
     const logout=document.createElement('button');logout.textContent='退出登录';logout.className='text-action';
     logout.onclick=async()=>{logout.disabled=true;try{const r=await fetch('/api/logout',{method:'POST',headers:{Authorization:`Bearer ${auth.token}`}});if(!r.ok)throw Error('退出失败，请重试');localStorage.removeItem('junqi-auth');sessionStorage.removeItem('junqi-session');location.assign('/');}catch(e){alert(e.message);logout.disabled=false;}};
     actions.append(logout);
@@ -38,7 +38,7 @@ function render(){
   if(rooms&&destination&&rooms.parentElement!==destination)destination.append(rooms);
   const profile=document.querySelector('#home-profile');
   const prompt=document.querySelector('#contest-login');if(prompt)prompt.hidden=!!auth?.token;
-  if(profile){profile.replaceChildren();if(auth?.token){const name=colorRating(link(auth.username,'/profile/'+encodeURIComponent(auth.username)),auth.rating);const details=document.createElement('p');details.textContent=auth.accountType==='bot'?'BOT 账号':`${auth.rank} · ${auth.rating}`;profile.append(name,details);}else profile.append(link('登录','/login.html'),document.createTextNode(' / '),link('注册','/register.html'));}
+  if(profile){profile.replaceChildren();if(auth?.token){const rated=auth.ratedGames>0;const name=(rated?colorRating:colorUnrated)(link(auth.username,'/profile/'+encodeURIComponent(auth.username)),auth.rating);const details=document.createElement('p');details.textContent=auth.accountType==='bot'?'BOT 账号':rated?`${auth.rank} · ${auth.rating}`:'unrated';profile.append(name,details);}else profile.append(link('登录','/login.html'),document.createTextNode(' / '),link('注册','/register.html'));}
 }
 render();window.addEventListener('junqi-profile-refresh',render);window.addEventListener('junqi-page-change',render);window.addEventListener('storage',event=>{if(event.key==='junqi-theme')applyTheme();render();});
 let sidebarRevision=0;
@@ -47,7 +47,7 @@ async function sidebar(){
   const top=document.querySelector('#top-rating');if(!top)return;
   try{
     const r=await fetch('/api/ratings');if(!r.ok)throw Error();const users=(await r.json()).slice(0,10);top.replaceChildren();
-    users.forEach((u,i)=>{const tr=document.createElement('tr');[i+1,u.username,u.rating].forEach((value,j)=>{const td=document.createElement('td');td.textContent=value;if(j===1){td.replaceChildren(colorRating(link(value,'/profile/'+encodeURIComponent(u.username)),u.rating));}tr.append(td);});top.append(tr);});
+    users.forEach((u,i)=>{const tr=document.createElement('tr');const rated=u.ratedGames>0;[i+1,u.username,rated?u.rating:'unrated'].forEach((value,j)=>{const td=document.createElement('td');td.textContent=value;if(j===1){td.replaceChildren((rated?colorRating:colorUnrated)(link(value,'/profile/'+encodeURIComponent(u.username)),u.rating));}else if(j===2&& !rated)colorUnrated(td);tr.append(td);});top.append(tr);});
     if(!users.length)top.innerHTML='<tr><td colspan="3">暂无排名</td></tr>';
   }catch{top.innerHTML='<tr><td colspan="3">排名加载失败</td></tr>';}
 }

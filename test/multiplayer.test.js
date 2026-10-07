@@ -170,8 +170,8 @@ test("两名玩家可创建、加入、准备、开局并保持暗棋隔离", { 
       matchClients[1].emit('resign');await first;
       const ended=waitEvent(owner,'room-state',r=>r.phase==='finished');matchClients[3].emit('resign');
       const result=await ended;
-      assert.equal(result.ratingChanges.north.delta,128);assert.equal(result.ratingChanges.south.delta,128);
-      assert.equal(result.ratingChanges.east.delta,-128);assert.equal(result.ratingChanges.west.delta,-128);
+      assert.equal(result.ratingChanges.north.delta,256);assert.equal(result.ratingChanges.south.delta,256);
+      assert.equal(result.ratingChanges.east.delta,-230);assert.equal(result.ratingChanges.west.delta,-230);
     }
     return seats;
   }
@@ -251,13 +251,13 @@ test("两名玩家可创建、加入、准备、开局并保持暗棋隔离", { 
   assert.equal(replay.frames[0].state.pieces.filter(p => p.position).length, 50);
   assert.equal(replay.frames.at(-1).state.phase, 'finished');
   assert.ok(replay.logs.length);
-  assert.equal(ratedResult.ratingChanges.north.delta, 128);
-  assert.equal(ratedResult.ratingChanges.south.delta, -128);
+  assert.equal(ratedResult.ratingChanges.north.delta, 256);
+  assert.equal(ratedResult.ratingChanges.south.delta, -230);
   const northAfterRating = await fetch(url + "/api/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username: "排位北方", password: "test1234" }) });
   const northProfile = await northAfterRating.json();
-  assert.equal(northProfile.rating, 1628);
+  assert.equal(northProfile.rating, 1756);
   assert.equal(northProfile.ratedGames, 1);
-  assert.equal(northProfile.rank, "少尉");
+  assert.equal(northProfile.rank, "中尉");
 
   const token = await createLogin("删除测试");
   const deleteUrl = url + "/api/admin/accounts/" + encodeURIComponent("删除测试");

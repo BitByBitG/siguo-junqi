@@ -24,7 +24,10 @@ import {
   SEAT_NAMES,
   activeSeats,
   createArmy,
-  createLandlordArmies,
+  createMachineRoomArmy,
+  machineRoomFlagCanReroll,
+  createLandlordDeal,
+  completeLandlordDeal,
   pieceAt,
   publicBoard,
   resolveBattle,
@@ -207,12 +210,13 @@ const saveRooms = debouncedWriter(async () => {
 });
 const INITIAL_RATING = 1500;
 const RATING_RANKS = [
-  [3000, "元帅", "marshal"], [2900, "上将", "general"], [2750, "中将", "general"],
-  [2600, "少将", "general"], [2450, "大校", "colonel"], [2300, "上校", "colonel"],
-  [2100, "中校", "colonel"], [1900, "少校", "colonel"], [1800, "上尉", "officer"],
-  [1700, "中尉", "officer"], [1600, "少尉", "officer"], [1500, "军士长", "sergeant"],
-  [1400, "上士", "sergeant"], [1200, "中士", "sergeant"], [1000, "下士", "sergeant"],
-  [800, "上等兵", "soldier"], [-Infinity, "列兵", "recruit"],
+  [5000, "大元帅", "grand-marshal"], [3500, "元帅", "marshal"], [3200, "大将", "general"],
+  [3000, "上将", "general"], [2800, "中将", "general"], [2600, "少将", "general"],
+  [2400, "大校", "colonel"], [2300, "上校", "colonel"], [2200, "中校", "colonel"],
+  [2100, "少校", "colonel"], [1900, "大尉", "officer"], [1800, "上尉", "officer"],
+  [1700, "中尉", "officer"], [1600, "少尉", "officer"], [1500, "准尉", "warrant"],
+  [1400, "上士", "sergeant"], [1300, "中士", "sergeant"], [1200, "下士", "sergeant"],
+  [800, "上等兵", "soldier"], [0, "列兵", "recruit"],
 ];
 
 function ratingRank(rating) {
@@ -224,8 +228,10 @@ function normalizeAccount(account) {
   if (!["human", "bot"].includes(account.type)) account.type = "human";
   if (!Object.hasOwn(account, "admin")) account.admin = false;
   if (!Number.isFinite(account.rating)) account.rating = INITIAL_RATING;
+  account.rating = Math.max(0, Math.min(8000, Math.round(account.rating)));
   if (!Number.isInteger(account.ratedGames) || account.ratedGames < 0) account.ratedGames = 0;
   if (!Number.isFinite(account.peakRating)) account.peakRating = account.rating;
+  account.peakRating = Math.max(0, Math.min(8000, Math.round(account.peakRating)));
   if (!Array.isArray(account.ratingHistory)) account.ratingHistory = [];
   if (typeof account.groupId !== 'string' || !groupData.groups[account.groupId]) account.groupId = 'default';
   if (typeof account.roomCreateDay !== 'string') account.roomCreateDay = '';
@@ -264,6 +270,8 @@ for (const name of Object.keys(accounts)) {
   if (namesSeen.has(key)) throw Error(`用户名大小写冲突：${name}；请先重命名冲突账号，账号数据未修改`);
   namesSeen.add(key);
 }
+// 启动时统一修正历史账号分数，确保所有 Rating 永远处于 0～8000。
+for (const account of Object.values(accounts)) normalizeAccount(account);
 function canonicalUsername(value) {
   const name = String(value || '').trim();
   return Object.keys(accounts).find(key => key.toLowerCase() === name.toLowerCase()) || name;
@@ -797,7 +805,7 @@ app.patch("/api/admin/accounts/:username/rating", async (request, response) => {
   const username = request.params.username;
   const rating = Number(request.body?.rating);
   if (!accounts[username]) return response.status(404).json({ error: "账号不存在" });
-  if (!Number.isInteger(rating) || rating < -100 || rating > 8000) return response.status(400).json({ error: "Rating 必须是 -100～8000 的整数" });
+  if (!Number.isInteger(rating) || rating < 0 || rating > 8000) return response.status(400).json({ error: "Rating 必须是 0～8000 的整数" });
   normalizeAccount(accounts[username]);
   const before=accounts[username].rating;
   if(before!==rating)accounts[username].ratingHistory.push({time:Date.now(),name:'管理员调整',kind:'adjustment',before,after:rating,delta:rating-before,pool:accounts[username].type});
@@ -989,6 +997,10 @@ function isPureBotRoom(room) {
   return room.players.length === room.capacity && room.players.every((player) => player.isBot);
 }
 
+function createModeArmy(mode, seat) {
+  return mode === 'machine_random' ? createMachineRoomArmy(seat) : createArmy(seat);
+}
+
 function serializeRoom(room, viewer) {
   const viewerIsAdmin = isSuperAdmin(viewer?.username);
   const spectator = !viewer?.seat;
@@ -1015,6 +1027,8 @@ function serializeRoom(room, viewer) {
     viewerSeat: viewer?.seat || null,
     viewerIsAdmin,
     canUndo: canUndo(room, viewer),
+    canRerollMachineSetup: room.mode === 'machine_random' && room.phase === 'setup' && !!viewer?.seat &&
+      !viewer.ready && machineRoomFlagCanReroll(room.pieces, viewer.seat),
     drawOffer: room.drawOffer ? {...room.drawOffer, required:room.players.filter(p=>!p.eliminated&&room.pieces.some(piece=>piece.owner===p.seat&&piece.position)).length} : null,
     drawn: !!room.drawn,
     aborted: !!room.aborted,
@@ -1138,29 +1152,35 @@ function expectedScore(ratingA, ratingB) {
   return 1 / (1 + 10 ** ((ratingB - ratingA) / 400));
 }
 
+function ratingPairChange(score, ratingA, ratingB, k = 512) {
+  const normal = k * (score - expectedScore(ratingA, ratingB));
+  if (score === 1 && ratingA > ratingB) return Math.max(normal, 70);
+  return normal;
+}
+
 function settleRatings(room) {
   if (!room.rated || room.ratingSettled || room.aborted || room.drawn || !room.ratedParticipants?.length) return;
   room.ratingSettled = true;
   const participants = room.ratedParticipants;
-  const k = 256; // Equal-rated win/loss: approximately +128 / -128.
+  const k = 512; // Equal-rated win: +256; losses are reduced slightly below the symmetric value.
   let raw;
   if (room.mode === "alliance" || room.mode==='landlord') {
     if(room.mode==='landlord'){
       const landlord=participants.filter(item=>item.seat===room.landlordSeat),farmers=participants.filter(item=>item.seat!==room.landlordSeat);
       const lr=landlord[0].rating,fr=farmers.reduce((sum,item)=>sum+item.rating,0)/farmers.length;
       const landlordScore=room.winner==='地主'?1:0;
-      const magnitude=Math.max(1,Math.round(Math.abs(k*(landlordScore-expectedScore(lr,fr)))));
-      const landlordChange=landlordScore?magnitude:-magnitude;
-      raw=participants.map(item=>item.seat===room.landlordSeat?landlordChange:-landlordChange);
+      const landlordChange=ratingPairChange(landlordScore,lr,fr,k);
+      const farmerTeamChange=ratingPairChange(1-landlordScore,fr,lr,k);
+      raw=participants.map(item=>item.seat===room.landlordSeat?landlordChange:farmerTeamChange/Math.max(1,farmers.length));
     }else{
     const ns = participants.filter((item) => item.seat === "north" || item.seat === "south");
     const ew = participants.filter((item) => item.seat === "east" || item.seat === "west");
     const nsRating = ns.reduce((sum, item) => sum + item.rating, 0) / ns.length;
     const ewRating = ew.reduce((sum, item) => sum + item.rating, 0) / ew.length;
     const nsScore = room.winner === "南北联盟" ? 1 : 0;
-    const magnitude = Math.max(1, Math.round(Math.abs(k * (nsScore - expectedScore(nsRating, ewRating)))));
-    const change = nsScore ? magnitude : -magnitude;
-    raw = participants.map((item) => (['north','south'].includes(item.seat) ? change : -change));
+    const nsChange = ratingPairChange(nsScore, nsRating, ewRating, k);
+    const ewChange = ratingPairChange(1-nsScore, ewRating, nsRating, k);
+    raw = participants.map((item) => (['north','south'].includes(item.seat) ? nsChange : ewChange));
     }
   } else {
     const rank = new Map(participants.map((item) => {
@@ -1172,14 +1192,12 @@ function settleRatings(room) {
       for (const other of participants) {
         if (other === item) continue;
         const score = rank.get(item.seat) < rank.get(other.seat) ? 1 : rank.get(item.seat) === rank.get(other.seat) ? 0.5 : 0;
-        value += score - expectedScore(item.rating, other.rating);
+        value += ratingPairChange(score, item.rating, other.rating, k) / k;
       }
       return k * value / (participants.length - 1);
     });
   }
-  const average = raw.reduce((sum, value) => sum + value, 0) / raw.length;
-  const deltas = raw.map((value) => Math.round(value - average));
-  deltas[0] -= deltas.reduce((sum, value) => sum + value, 0);
+  const deltas = raw.map((value) => Math.round(value>=0?value:value*0.9));
   room.ratingChanges = {};
   const grouped = new Map();
   participants.forEach((item,index)=>{const group=grouped.get(item.username)||[];group.push({item,delta:deltas[index]});grouped.set(item.username,group);});
@@ -1188,7 +1206,9 @@ function settleRatings(room) {
     if (!account) continue;
     normalizeAccount(account);
     const before = account.rating;
-    account.rating = Math.max(-100, Math.min(8000,account.rating + Math.round(entries.reduce((n,e)=>n+e.delta,0)/entries.length)));
+    const opposed=entries.some(e=>e.delta>0)&&entries.some(e=>e.delta<0);
+    const accountDelta=opposed?0:Math.round(entries.reduce((n,e)=>n+e.delta,0)/entries.length);
+    account.rating = Math.max(0, Math.min(8000,account.rating + accountDelta));
     account.ratedGames += 1;
     account.peakRating = Math.max(account.peakRating, account.rating);
     account.ratingHistory.push({time:Date.now(),code:room.code,name:room.name||room.code,before,after:account.rating,delta:account.rating-before,pool:room.ratingPool||'human'});
@@ -1463,7 +1483,7 @@ io.on("connection", (socket) => {
     const account=session&&session.expiresAt>Date.now()?accounts[session.username]:null;
     let error=account?.type==='bot'?'BOT 账号仅可使用工作台':account?.blocked&&!['lobby-auth','watch-room','leave-room'].includes(event)?'账号已封禁，仅可浏览':null;
     if(account&&!isSuperAdmin(session.username)){
-      const playEvents=new Set(['create-room','join-room','take-seat','swap-setup','randomize-setup','mirror-setup','toggle-ready','start-game','claim-landlord','configure-room','move','resign','draw-vote','undo-move','layout-load']);
+      const playEvents=new Set(['create-room','join-room','take-seat','swap-setup','randomize-setup','reroll-machine-setup','mirror-setup','toggle-ready','start-game','claim-landlord','configure-room','move','resign','draw-vote','undo-move','layout-load']);
       const chatEvents=new Set(['lobby-chat-message','chat-message','chat-react']);
       if(playEvents.has(event)&&!groupCan(session.username,'play'))error='你所在分组已暂停下棋功能';
       if(chatEvents.has(event)&&!groupCan(session.username,'chat'))error='你所在分组已暂停聊天功能';
@@ -1577,9 +1597,9 @@ io.on("connection", (socket) => {
     if (!username) return replyError(socket, "请先登录账号");
     const quota=canCreateRoom(username);if(!quota.ok)return replyError(socket,quota.error);
     const capacity = [2, 3, 4].includes(Number(payload.capacity)) ? Number(payload.capacity) : 4;
-    const requestedMode=['ffa','alliance','random','landlord'].includes(payload.mode)?payload.mode:'ffa';
+    const requestedMode=['ffa','alliance','random','machine_random','landlord'].includes(payload.mode)?payload.mode:'ffa';
     const mode = capacity === 4 ? requestedMode : ['alliance','landlord'].includes(requestedMode)?'ffa':requestedMode;
-    const visibility=['dark','semi','light'].includes(payload.visibility)?payload.visibility:'dark';
+    const visibility=['dark','semi','light'].includes(payload.visibility)?payload.visibility:(mode==='machine_random'?'semi':'dark');
     const rated = false; // Determined from the complete roster at start.
     const code = randomCode();
     const seats = activeSeats(capacity);
@@ -1593,7 +1613,7 @@ io.on("connection", (socket) => {
       rated,
       activeSeats: seats,
       players: [player],
-      pieces: createArmy(seats[0]),
+      pieces: mode==='landlord'?[]:createModeArmy(mode,seats[0]),
       phase: "setup",
       hostName: player.name,
       turn: null,
@@ -1661,17 +1681,17 @@ io.on("connection", (socket) => {
     if (!name) return replyError(socket, "你不在这个房间中");
     if (existing) {
       if (room.phase !== "setup") return replyError(socket, "请先离座，再接替其他方向");
-      room.pieces = room.pieces.filter((piece) => piece.owner !== existing.seat);
+      if(!room.landlordCalling&&room.mode!=='landlord')room.pieces = room.pieces.filter((piece) => piece.owner !== existing.seat);
       room.privateLogs.delete(existing.seat);
       existing.seat = seat; existing.ready = false; existing.eliminated = false;
-      room.pieces.push(...createArmy(seat));
+      if(!room.landlordCalling&&room.mode!=='landlord')room.pieces.push(...createModeArmy(room.mode,seat));
       socket.data.seat = seat;
       socket.emit("session", { code: room.code, token: existing.token, seat });
     } else {
       if (room.phase === "playing" && !room.pieces.some((piece) => piece.owner === seat && piece.position)) return replyError(socket, "该方向已经退出对局");
       const player = makePlayer(seat, username, socket);
       room.players.push(player);
-      if (room.phase === "setup") room.pieces.push(...createArmy(seat));
+      if (room.phase === "setup"&&!room.landlordCalling&&room.mode!=='landlord') room.pieces.push(...createModeArmy(room.mode,seat));
       joinSocket(socket, room, player);
     }
     addLog(room, `${name} 落座${SEAT_NAMES[seat]}`);
@@ -1684,7 +1704,7 @@ io.on("connection", (socket) => {
     if (room.rated && room.phase === "playing") return replyError(socket, "排位对局中请使用认输");
     const name = player.name, seat = player.seat;
     room.players = room.players.filter((item) => item !== player);
-    if (room.phase === "setup") {
+    if (room.phase === "setup"&&!room.landlordCalling&&room.mode!=='landlord') {
       room.pieces = room.pieces.filter((piece) => piece.owner !== seat);
       room.privateLogs.delete(seat);
     }
@@ -1821,7 +1841,7 @@ io.on("connection", (socket) => {
     if(!room||room.hostName!==socket.data.username)return replyError(socket,'只有房主可以修改房间设置');
     if(room.phase!=='setup'||room.landlordCalling)return replyError(socket,'开始对局后不能修改房间设置');
     capacity=Number(capacity);if(![2,3,4].includes(capacity))return replyError(socket,'人数只能是 2、3 或 4');
-    if(!['ffa','alliance','random','landlord'].includes(mode))return replyError(socket,'模式无效');
+    if(!['ffa','alliance','random','machine_random','landlord'].includes(mode))return replyError(socket,'模式无效');
     if((mode==='alliance'||mode==='landlord')&&capacity!==4)return replyError(socket,'该模式只支持四人');
     if(!['dark','semi','light'].includes(visibility))return replyError(socket,'明暗规则无效');
     if(room.players.some(p=>p.isBot)&&(visibility!=='dark'||!['ffa','alliance'].includes(mode)))return replyError(socket,'BOT 只支持暗棋的四方混战和对家结盟');
@@ -1834,7 +1854,7 @@ io.on("connection", (socket) => {
     for(const player of room.players)if(!player.seat){player.seat=nextSeats.find(seat=>!used.has(seat));used.add(player.seat);}
     room.name=name.trim()||room.code;room.capacity=capacity;room.activeSeats=nextSeats;room.mode=mode;room.visibility=visibility;
     if(structureChanged){room.landlordSeat=null;room.landlordCalling=false;room.pieces=[];room.privateLogs=new Map();}
-    for(const player of room.players){player.ready=false;player.eliminated=false;if(structureChanged)room.pieces.push(...createArmy(player.seat));const target=player.socketId&&io.sockets.sockets.get(player.socketId);if(target){target.data.seat=player.seat;target.emit('session',{code:room.code,token:player.token,seat:player.seat});}}
+    for(const player of room.players){player.ready=false;player.eliminated=false;if(structureChanged&&mode!=='landlord')room.pieces.push(...createModeArmy(mode,player.seat));const target=player.socketId&&io.sockets.sockets.get(player.socketId);if(target){target.data.seat=player.seat;target.emit('session',{code:room.code,token:player.token,seat:player.seat});}}
     addLog(room,'房主修改了房间设置，所有玩家需要重新完成布阵');emitRoom(room);
   });
   socket.on('undo-move', () => {
@@ -1852,7 +1872,7 @@ io.on("connection", (socket) => {
   socket.on('layout-save', async ({name} = {}) => {
     const {room, player} = playerForSocket(socket);
     if (!room || !player || room.phase !== 'setup') return replyError(socket, '请先落座并进入布阵阶段');
-    if(room.mode==='random'||room.mode==='landlord')return replyError(socket,'当前模式不使用阵型库');
+    if(['random','machine_random','landlord'].includes(room.mode))return replyError(socket,'当前模式不使用阵型库');
     const account = accounts[player.username];
     if ((account.layouts || []).length >= 3) return replyError(socket, '最多保存三个阵型，请先删除一个');
     const valid = validateSetup(room.pieces, player.seat);
@@ -1864,7 +1884,9 @@ io.on("connection", (socket) => {
   });
   socket.on('mirror-setup', () => {
     const {room, player} = playerForSocket(socket);
-    if (!room || !player || room.phase !== 'setup' || player.ready || room.mode==='random') return replyError(socket, '当前模式不能翻转布阵');
+    if (!room || !player || room.phase !== 'setup') return replyError(socket, '当前不能翻转布阵');
+    if(player.ready)return replyError(socket,'取消准备后才能翻转布阵');
+    if(['random','machine_random'].includes(room.mode))return replyError(socket,'当前模式不能翻转布阵');
     const pieces = room.pieces.map(p => {
       if (p.owner !== player.seat) return p;
       const node = BOARD.byId.get(p.position);
@@ -1883,7 +1905,7 @@ io.on("connection", (socket) => {
   });
   socket.on('layout-load', ({index} = {}) => {
     const {room, player} = playerForSocket(socket);
-    if (!room || !player || room.phase !== 'setup' || player.ready || room.mode==='random'||room.mode==='landlord') return replyError(socket, '当前模式不能使用阵型库');
+    if (!room || !player || room.phase !== 'setup' || player.ready || ['random','machine_random','landlord'].includes(room.mode)) return replyError(socket, '当前模式不能使用阵型库');
     const layout = Number.isInteger(index) && accounts[player.username]?.layouts?.[index];
     if (!layout) return replyError(socket, '阵型不存在');
     const army = createArmy(player.seat), remaining = [...army];
@@ -1899,13 +1921,13 @@ io.on("connection", (socket) => {
   socket.on("swap-setup", ({ from, to } = {}) => {
     const { room, player } = playerForSocket(socket);
     if (!room || !player || room.phase !== "setup" || player.ready) return;
-    if(room.mode==='random')return replyError(socket,'随机布阵模式不能修改阵型');
+    if(['random','machine_random'].includes(room.mode))return replyError(socket,'随机布阵模式不能修改阵型');
     const a = pieceAt(room.pieces, from);
     const b = pieceAt(room.pieces, to);
     if (!a || a.owner !== player.seat || (b && b.owner !== player.seat)) return replyError(socket, "请选择己方棋子和本方合法位置");
     const fromNode = BOARD.byId.get(from);
     const toNode = BOARD.byId.get(to);
-    if (!fromNode || !toNode || fromNode.kind === "camp" || toNode.kind === "camp") return;
+    if (!fromNode || !toNode) return;
     const oldA=a.position,oldB=b?.position||null;a.position=to;if(b)b.position=oldA;
     const valid=validateSetup(room.pieces,player.seat,room);
     if(!valid.ok){a.position=oldA;if(b)b.position=oldB;return replyError(socket,valid.message);}
@@ -1916,9 +1938,18 @@ io.on("connection", (socket) => {
   socket.on("randomize-setup", () => {
     const { room, player } = playerForSocket(socket);
     if (!room || !player || room.phase !== "setup" || player.ready) return;
-    if(room.mode==='random'||room.mode==='landlord')return replyError(socket,'当前模式不能重新随机普通阵型');
+    if(['random','machine_random','landlord'].includes(room.mode))return replyError(socket,'当前模式不能重新随机普通阵型');
     room.pieces = room.pieces.filter((piece) => piece.owner !== player.seat);
     room.pieces.push(...createArmy(player.seat));
+    emitRoom(room);
+  });
+
+  socket.on('reroll-machine-setup', () => {
+    const {room, player} = playerForSocket(socket);
+    if (!room || !player || room.phase !== 'setup' || player.ready || room.mode !== 'machine_random') return;
+    if (!machineRoomFlagCanReroll(room.pieces, player.seat)) return replyError(socket, '当前军旗位置不符合重随条件');
+    room.pieces = room.pieces.filter((piece) => piece.owner !== player.seat);
+    room.pieces.push(...createMachineRoomArmy(player.seat));
     emitRoom(room);
   });
 
@@ -1941,7 +1972,8 @@ io.on("connection", (socket) => {
     if (room.players.length !== room.capacity) return replyError(socket, "请等待所有玩家加入");
     if(room.mode==='landlord'&&!room.landlordSeat){
       if(room.players.some(p=>p.isBot))return replyError(socket,'斗地主不支持 BOT');
-      room.landlordCalling=true;room.players.forEach(p=>p.ready=false);addLog(room,'开始抢地主，最先点击“抢地主”的玩家成为地主');emitRoom(room);return;
+      const deal=createLandlordDeal(room.activeSeats);room.pieces=deal.pieces;room.landlordReserve=deal.reserve;
+      room.landlordCalling=true;room.players.forEach(p=>p.ready=false);addLog(room,'已随机发给每人 19 枚普通棋，开始抢地主；最先点击“抢地主”的玩家成为地主');emitRoom(room);return;
     }
     if (!room.players.every((item) => item.ready)) return replyError(socket, "仍有玩家没有准备");
     if(room.mode==='landlord')for(const piece of room.pieces)if(piece.type==='flag'&&piece.owner!==room.landlordSeat)piece.revealed=true;
@@ -1966,7 +1998,7 @@ io.on("connection", (socket) => {
   socket.on('claim-landlord',()=>{
     const {room,player}=playerForSocket(socket);
     if(!room||!player||room.phase!=='setup'||room.mode!=='landlord'||!room.landlordCalling||room.landlordSeat||room.players.length!==4)return replyError(socket,'当前不能抢地主');
-    room.landlordSeat=player.seat;room.landlordCalling=false;room.pieces=createLandlordArmies(room.activeSeats,player.seat);room.players.forEach(p=>p.ready=false);
+    room.landlordSeat=player.seat;room.landlordCalling=false;room.pieces=completeLandlordDeal(room.pieces,room.landlordReserve,room.activeSeats,player.seat);delete room.landlordReserve;room.players.forEach(p=>p.ready=false);
     addLog(room,`${player.name} 抢地主成功，请所有玩家完成布阵`,'success');emitRoom(room);
   });
 

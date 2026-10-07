@@ -58,15 +58,15 @@ test('admin presence, image permissions/deletion, four-direction mirrors and +12
     promise=wait(sockets[i],'room-state');sockets[i].emit('mirror-setup');const twice=await promise;
     for(const p of army){const [seat,row,col]=p.position.split('-');assert.equal(twice.pieces.find(q=>q.id===p.id).position,`${seat}-${row}-${4-Number(col)}`);}
     promise=wait(sockets[i],'room-state',s=>s.players.find(p=>p.seat===s.viewerSeat).ready);sockets[i].emit('toggle-ready');await promise;
-    const denied=wait(sockets[i],'game-error');sockets[i].emit('mirror-setup');assert.match(await denied,/未准备/);
+    const denied=wait(sockets[i],'game-error');sockets[i].emit('mirror-setup');assert.match(await denied,/取消准备/);
   }
   const online=(await api('/api/admin/online','GET',undefined,null,true)).body;
   assert.equal(online.length,4);assert.ok(online.every(u=>u.rooms.includes(code)));
   promise=wait(sockets[0],'room-state',s=>s.phase==='playing');sockets[0].emit('start-game');await promise;
   promise=wait(sockets[0],'room-state',s=>s.players.find(p=>p.seat==='east').eliminated);sockets[1].emit('resign');await promise;
   promise=wait(sockets[0],'room-state',s=>s.phase==='finished');sockets[3].emit('resign');state=await promise;
-  assert.equal(state.ratingChanges.north.delta,128);assert.equal(state.ratingChanges.south.delta,128);
-  assert.equal(state.ratingChanges.east.delta,-128);assert.equal(state.ratingChanges.west.delta,-128);
+  assert.equal(state.ratingChanges.north.delta,256);assert.equal(state.ratingChanges.south.delta,256);
+  assert.equal(state.ratingChanges.east.delta,-230);assert.equal(state.ratingChanges.west.delta,-230);
   await api('/api/logout','POST',{},auth[0].token);
   assert.ok(!(await api('/api/admin/online','GET',undefined,null,true)).body.some(u=>u.username===auth[0].username));
 });

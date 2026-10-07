@@ -1,7 +1,7 @@
 import {renderRichChatBody,attachChatFold,releaseChatFolds} from './chat-common.js';
 import {copySourceButton,renderMutedUsers} from './chat-controls.js';
 import {emojiGroups,emojis} from './emojis.js';
-import {colorRating} from './rating-colors.js';
+import {colorRating, colorUnrated} from './rating-colors.js';
 import {avatarImage,messageTime} from './avatars.js';
 import { attachImages, composeImages, clearImages, displayImage } from './chat-images.js';
 import { secureSocket, bytes, b64 } from './secure.js';
@@ -241,6 +241,9 @@ function updateModeInput() {
 }
 
 capacityInput.addEventListener("change", updateModeInput);
+modeInput.addEventListener('change', () => {
+  if (modeInput.value === 'machine_random') visibilityInput.value = 'semi';
+});
 updateModeInput();
 
 $("#create-form").addEventListener("submit", (event) => {
@@ -351,7 +354,7 @@ function renderRoomList() {
     const phase = { setup: "布阵中", playing: "对局中", finished: "已结束" }[room.phase];
     const info=document.createElement('div'),title=document.createElement('strong'),code=document.createElement('small'),details=document.createElement('span'),enter=document.createElement('button');
     title.textContent=room.name||room.code;code.textContent=room.code;
-    const modeName={ffa:'四方混战',alliance:'对家结盟',random:'随机布阵',landlord:'斗地主'}[room.mode]||room.mode;
+    const modeName={ffa:'四方混战',alliance:'对家结盟',random:'半随机',machine_random:'随机（机房规则）',landlord:'斗地主'}[room.mode]||room.mode;
     details.textContent=`${room.phase==='setup'?'自动计分':room.rated ? (room.ratingPool==='bot'?'BOT Rated':'Rated') : '不计分'} · ${modeName} · ${room.players}/${room.capacity} 人${room.bots ? `（${room.bots} BOT）` : ''} · ${phase}`;
     info.append(title,code,details);enter.type='button';enter.textContent=room.phase==='finished'?'查看 / 复盘':'进入';row.append(info,enter);
     enter.addEventListener("click", () => {
@@ -540,7 +543,7 @@ function handleBoardClick(position) {
   if (!state || state.spectator || state.phase === "finished") return;
   const piece = state.pieces.find((item) => item.position === position);
   if (state.phase === "setup") {
-    if(state.mode==='random')return showToast('随机布阵模式不能修改阵型');
+    if(['random','machine_random'].includes(state.mode))return showToast('随机模式不能修改阵型');
     const me = state.players.find((player) => player.seat === state.viewerSeat);
     if (me?.ready) return showToast("取消准备后才能调整布阵");
     if (!selected) {
@@ -608,13 +611,14 @@ function renderPlayers() {
     const me = player.seat === state.viewerSeat ? " · 你" : "";
     const host = player.isHost ? " · 房主" : "";
     const role=state.mode==='landlord'&&state.landlordSeat?(player.seat===state.landlordSeat?' · 地主':' · 农民'):'';
-    const rating = player.empty ? "" : `<span class="rank-badge cf-rated" data-cf="${player.rankClass}">${player.isBot?'BOT · ':''}${escapeHtml(player.rank)} · ${player.rating}</span>`;
+    const rated = !player.empty && player.ratedGames > 0;
+    const rating = player.empty ? "" : `<span class="rank-badge ${rated?'cf-rated':'cf-unrated'}"${rated?` data-cf="${player.rankClass}"`:''}>${rated?`${player.isBot?'BOT · ':''}${escapeHtml(player.rank)} · ${player.rating}`:'unrated'}</span>`;
     const change = state.ratingChanges?.[player.seat];
     const delta = change ? `<span class="rating-delta ${change.delta >= 0 ? "up" : "down"}">${change.delta >= 0 ? "+" : ""}${change.delta}</span>` : "";
     const signature=player.empty?'':(player.signature||'').replace(/[#*_`$<>\[\]]/g,'').replace(/\s+/g,' ').slice(0,48);
     card.innerHTML = `<div class="seat-badge">${seatShort[player.seat]}</div><div class="player-info"><div class="player-name">${player.empty ? "空座" : escapeHtml(player.name)}${me}</div><div class="player-status">${boardMeta?.seatNames[player.seat] || player.seat}${host}${role}</div>${rating}${signature?`<div class="signature-snippet" title="${escapeHtml(player.signature||'')}">${escapeHtml(signature)}</div>`:''}</div><div class="player-state">${playerStatus(player)}${delta}</div>`;
-    if(!player.empty){const old=card.querySelector('.player-name'),link=document.createElement('a');link.href='/profile/'+encodeURIComponent(player.username||player.name);link.textContent=player.name;colorRating(link,player.rating??1500);old.replaceChildren(link,document.createTextNode(me));}
-    if (!player.empty) colorRating(card.querySelector('.player-name'), player.rating ?? 1500);
+    if(!player.empty){const old=card.querySelector('.player-name'),link=document.createElement('a');link.href='/profile/'+encodeURIComponent(player.username||player.name);link.textContent=player.name;(rated?colorRating:colorUnrated)(link,player.rating??1500);old.replaceChildren(link,document.createTextNode(me));}
+    if (!player.empty) (rated?colorRating:colorUnrated)(card.querySelector('.player-name'), player.rating ?? 1500);
     if (canModerateKick(player) && !player.empty) card.append(kickButton(player));
     list.append(card);
   }
@@ -680,9 +684,9 @@ function renderControls() {
   if(state.isHost&&state.phase==='setup'&&!state.landlordCalling){
     const name=document.createElement('input');name.className='text-input';name.maxLength=40;name.value=state.name===state.code?'':state.name;name.placeholder='房间名称';
     const capacity=document.createElement('select');for(const n of [2,3,4])capacity.add(new Option(`${n} 人`,n));capacity.value=String(state.capacity);
-    const mode=document.createElement('select');for(const [value,label] of [['ffa','四方混战'],['alliance','对家结盟'],['random','随机布阵'],['landlord','斗地主']])mode.add(new Option(label,value));mode.value=state.mode;
+    const mode=document.createElement('select');for(const [value,label] of [['ffa','四方混战'],['alliance','对家结盟'],['random','半随机'],['machine_random','随机（机房规则）'],['landlord','斗地主']])mode.add(new Option(label,value));mode.value=state.mode;
     const visibility=document.createElement('select');for(const [value,label] of [['dark','暗棋'],['semi','半明棋'],['light','明棋']])visibility.add(new Option(label,value));visibility.value=state.visibility||'dark';
-    const sync=()=>{for(const option of mode.options)if(['alliance','landlord'].includes(option.value))option.disabled=capacity.value!=='4';if(capacity.value!=='4'&&['alliance','landlord'].includes(mode.value))mode.value='ffa';};capacity.onchange=sync;sync();
+    const sync=()=>{for(const option of mode.options)if(['alliance','landlord'].includes(option.value))option.disabled=capacity.value!=='4';if(capacity.value!=='4'&&['alliance','landlord'].includes(mode.value))mode.value='ffa';};capacity.onchange=sync;mode.onchange=()=>{if(mode.value==='machine_random')visibility.value='semi';};sync();
     hostControls.append(name,capacity,mode,visibility,addControl('应用房间设置','alt',()=>socket.emit('configure-room',{name:name.value,capacity:Number(capacity.value),mode:mode.value,visibility:visibility.value})));
   }
   if (state.canUndo) boardControls.append(addControl('撤回上一步', 'alt', () => socket.emit('undo-move')));
@@ -704,31 +708,33 @@ function renderControls() {
   }
   if (state.canToggleAdminReveal) boardControls.append(addControl(state.adminRevealEnabled ? "关闭明牌观战" : "开启明牌观战", "alt", () => socket.emit("toggle-admin-reveal", { enabled: !state.adminRevealEnabled })));
   if (state.phase === "setup") {
-    if(state.mode==='landlord'&&state.landlordCalling){
-      if(!state.spectator)boardControls.append(addControl('抢地主','',()=>socket.emit('claim-landlord')));
-      const hint=document.createElement('strong');hint.textContent='最先点击“抢地主”的玩家成为地主';boardControls.append(hint);
-    }else if(state.mode==='landlord'&&!state.landlordSeat){
-      const hint=document.createElement('strong');hint.textContent='等待房主开始抢地主';boardControls.append(hint);
-    }else
     if (state.spectator) {
       const label = document.createElement("strong"); label.textContent = "选择空方向落座："; boardControls.append(label);
       for (const player of state.players.filter(item => item.empty)) boardControls.append(addControl(boardMeta.seatNames[player.seat], "alt", () => socket.emit("take-seat", { seat: player.seat })));
       const hint = document.createElement("span"); hint.className = "setup-hint"; hint.textContent = "当前为离座状态，等价于观战"; boardControls.append(hint);
+    }else if(state.mode==='landlord'&&state.landlordCalling){
+      if(!state.spectator)boardControls.append(addControl('抢地主','',()=>socket.emit('claim-landlord')));
+      boardControls.append(addControl('离座观战','alt',()=>{selected=null;socket.emit('leave-seat');}));
+      const hint=document.createElement('strong');hint.textContent='最先点击“抢地主”的玩家成为地主';boardControls.append(hint);
+    }else if(state.mode==='landlord'&&!state.landlordSeat){
+      boardControls.append(addControl('离座观战','alt',()=>{selected=null;socket.emit('leave-seat');}));
+      const hint=document.createElement('strong');hint.textContent='等待房主开始抢地主';boardControls.append(hint);
     } else {
-      if(state.mode!=='random'&&state.mode!=='landlord')boardControls.append(addControl("随机布阵", "alt", () => { selected = null; socket.emit("randomize-setup"); }, me?.ready),addControl("左右翻转", "alt", () => { selected = null; socket.emit("mirror-setup"); }, me?.ready));
+      if(!['random','machine_random','landlord'].includes(state.mode))boardControls.append(addControl("随机布阵", "alt", () => { selected = null; socket.emit("randomize-setup"); }, me?.ready),addControl("左右翻转", "alt", () => { selected = null; socket.emit("mirror-setup"); }, me?.ready));
       else if(state.mode==='landlord')boardControls.append(addControl("左右翻转", "alt", () => { selected = null; socket.emit("mirror-setup"); }, me?.ready));
+      if(state.mode==='machine_random'&&state.canRerollMachineSetup)boardControls.append(addControl('军旗位置危险，重新随机','alt',()=>{selected=null;socket.emit('reroll-machine-setup');},me?.ready));
       boardControls.append(addControl(me?.ready ? "取消准备" : "完成布阵", "", () => { selected = null; socket.emit("toggle-ready"); }), addControl("离座观战", "alt", () => { selected = null; socket.emit("leave-seat"); }));
-      if(state.mode!=='random'&&state.mode!=='landlord')boardControls.append(addControl('保存阵型', 'alt', () => {
+      if(!['random','machine_random','landlord'].includes(state.mode))boardControls.append(addControl('保存阵型', 'alt', () => {
         const name = prompt('给阵型起个名字（最多保存三个）');
         if(name !== null) socket.emit('layout-save', {name});
       }, (state.layouts || []).length >= 3));
-      if(state.mode!=='random'&&state.mode!=='landlord')for (const layout of state.layouts || []) {
+      if(!['random','machine_random','landlord'].includes(state.mode))for (const layout of state.layouts || []) {
         const group = document.createElement('div'); group.className = 'layout-entry';
         group.append(addControl(`使用：${layout.name}`, 'alt', () => socket.emit('layout-load', {index:layout.index}), me?.ready),
           addControl('删除', 'alt', () => {if(confirm(`删除阵型「${layout.name}」？`)) socket.emit('layout-delete', {index:layout.index});}));
         boardControls.append(group);
       }
-      const hint = document.createElement("span"); hint.className = "setup-hint"; hint.textContent = me?.ready ? "等待其他玩家与房主开始" : state.mode==='random'?"阵型已随机生成且不可修改":"点击两枚棋子交换位置"; boardControls.append(hint);
+      const hint = document.createElement("span"); hint.className = "setup-hint"; hint.textContent = me?.ready ? "等待其他玩家与房主开始" : state.mode==='machine_random'?(state.canRerollMachineSetup?'军旗位于前两排或前四排铁路，可选择重随':'机房规则纯随机阵型，不可手动修改'):state.mode==='random'?"半随机合法阵型已生成且不可修改":"点击两枚棋子交换位置"; boardControls.append(hint);
     }
   } else if (state.spectator && state.phase === "playing") {
     const badge = document.createElement("strong"); badge.textContent = state.rated ? "排位观战 · 开局后不可接替" : "观战模式 · 可接替空缺方向："; boardControls.append(badge);
@@ -1008,7 +1014,7 @@ async function openReplay(download) {
 function render() {
   if (!state) return;
   $("#room-code-label").textContent = `${state.name || state.code} (${state.code})`;
-  const modeNames={alliance:'对家结盟',ffa:'四方混战',random:'随机布阵',landlord:'斗地主'},visibilityNames={dark:'暗棋',semi:'半明棋',light:'明棋'};
+  const modeNames={alliance:'对家结盟',ffa:'四方混战',random:'半随机',machine_random:'随机（机房规则）',landlord:'斗地主'},visibilityNames={dark:'暗棋',semi:'半明棋',light:'明棋'};
   $("#mode-label").textContent = `${state.phase==='setup'?'自动计分':state.rated ? "Rated" : "不计分"} · ${modeNames[state.mode]||state.mode} · ${visibilityNames[state.visibility||'dark']}`;
   const phases = { setup: "布阵中", playing: "对局进行中", finished: "对局结束" };
   $("#phase-label").textContent = phases[state.phase];

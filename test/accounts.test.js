@@ -36,7 +36,7 @@ test('注册审核、密码修改和权限校验', { timeout: 15000 }, async () 
   const profile = await call('me', null, renewedHeaders, 'GET');
   assert.equal(profile.status, 200);
   assert.equal(profile.body.rating, 1500);
-  assert.equal(profile.body.rank, '军士长');
+  assert.equal(profile.body.rank, '准尉');
   assert.equal((await call('logout', null, renewedHeaders)).status, 200);
   assert.equal((await call('me', null, renewedHeaders, 'GET')).status, 401);
   assert.equal((await call('password', { oldPassword: 'new12345', password: 'new23456' }, renewedHeaders)).status, 401);
@@ -48,14 +48,17 @@ test('注册审核、密码修改和权限校验', { timeout: 15000 }, async () 
   const adjusted = await call('admin/accounts/tester/rating', { rating: 3000 }, admin, 'PATCH');
   assert.equal(adjusted.status, 200);
   assert.equal(adjusted.body.rating, 3000);
-  assert.equal(adjusted.body.rank, '元帅');
+  assert.equal(adjusted.body.rank, '上将');
+  const marshal = await call('admin/accounts/tester/rating', { rating: 4000 }, admin, 'PATCH');
+  assert.equal(marshal.body.rank, '元帅');
+  await call('admin/accounts/tester/rating', { rating: 3000 }, admin, 'PATCH');
   const details = await call('admin/accounts?details=1', null, admin, 'GET');
   assert.equal(details.body.find(account => account.username === 'tester').rating, 3000);
   const ratings = await call('ratings', null, {}, 'GET');
   assert.equal(ratings.status, 200);
   assert.equal(ratings.body[0].username, 'tester');
   assert.equal(ratings.body[0].rating, 3000);
-  assert.equal(ratings.body[0].rank, '元帅');
+  assert.equal(ratings.body[0].rank, '上将');
   assert.equal(ratings.body.some(account => account.username === 'rejected'), false);
  } finally { child.kill(); await new Promise(resolve => child.exitCode !== null ? resolve() : child.once('exit', resolve)); await rm(dir, { recursive: true, force: true }); }
 });
