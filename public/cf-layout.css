@@ -1,4 +1,11 @@
 :root { --ink:#a0adb9; --muted:#9aa4b1; --line:#48535f; font-family:Arial,"Microsoft YaHei",sans-serif; }
+.language-switch{display:inline-flex;gap:8px;align-items:center}
+.language-switch button[aria-pressed="true"]{font-weight:bold;text-decoration:underline}
+.site-footer{max-width:1440px;width:calc(100% - 40px);margin:36px auto 16px;border-top:1px solid var(--line);padding:14px 8px;text-align:center;font-size:12px;color:var(--muted)}
+.site-footer p{margin:8px 0}
+html[lang="en"] .piece-label{font-size:.22px;letter-spacing:0}
+html[lang="en"] .player-info{min-width:0}
+html[lang="en"] .player-status{overflow-wrap:anywhere}
 body { background:#22272e; color:var(--ink); font-size:14px; }
 [hidden] { display:none !important; }
 a { color:#4b8eda; text-decoration:none; }

@@ -415,7 +415,7 @@ app.use((req,res,next)=>{
   req.url=req.url.replace(/^(\/api\/(?:admin\/accounts|admin\/registrations|profile|avatar)\/)([^/?]+)/,(_,prefix,name)=>prefix+encodeURIComponent(canonicalUsername(decodeURIComponent(name))));
   const session=sessions.get(String(req.headers.authorization||'').replace(/^Bearer /,''));
   const account=session&&session.expiresAt>Date.now()?accounts[session.username]:null;
-  const common=['/api/login','/api/bot/login','/api/logout','/api/me','/api/presence'];
+  const common=['/api/login','/api/bot/login','/api/logout','/api/me','/api/presence','/api/time'];
   if(account?.blocked&&!['GET','HEAD'].includes(req.method)&&!common.includes(req.path))return res.status(403).json({error:'账号已封禁，仅可浏览'});
   if(account?.type==='bot'&&!common.includes(req.path)&&!req.path.startsWith('/api/program')&&!req.path.startsWith('/api/bot/'))return res.status(403).json({error:'BOT 账号仅可使用工作台'});
   if(globalBans.includes(session?.username)&&req.method!=='GET'&&req.path==='/api/announcements')return res.status(403).json({error:'账号已全站禁言'});
@@ -654,6 +654,7 @@ app.delete('/api/admin/rooms/:code', async (req, res) => {
 });
 app.get('/downloads/siguo-junqi-bot.mjs', (_req, res) => res.download(path.join(__dirname, '../bots/siguo-junqi-bot.mjs')));
 app.get('/downloads/bot-studio-bot.js', (_req, res) => res.download(path.join(__dirname, '../public/bot-studio-bot.js')));
+app.get('/api/time', (_request,response)=>response.set('Cache-Control','no-store').json({serverTime:Date.now()}));
 app.get("/health", (_request, response) => response.json({ ok: true, rooms: rooms.size }));
 app.get("/api/rooms", (_request, response) => response.json(roomSummaries()));
 

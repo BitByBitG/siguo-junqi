@@ -8,7 +8,7 @@ function paint() {
   const nodes = [];
   while (walker.nextNode()) {
     const node = walker.currentNode;
-    if (!node.parentElement.closest('script,style,textarea,input,select,svg,code,pre,.katex,.cf-rated,.chat-content,[contenteditable]')) nodes.push(node);
+    if (!node.parentElement.closest('script,style,textarea,input,select,svg,code,pre,.katex,.cf-rated,.chat-content,[contenteditable],.site-footer')) nodes.push(node);
   }
   for (const node of nodes) {
     pattern.lastIndex = 0;

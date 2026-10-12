@@ -1,4 +1,5 @@
 import '/secure.js';
+import {language,setLanguage,localize,translateText} from './i18n.js';
 import {colorRating, colorUnrated} from './rating-colors.js';
 function currentTheme(){return localStorage.getItem('junqi-theme')==='light'?'light':'dark';}
 let lightFavicon=null,faviconGeneration=0;
@@ -19,6 +20,9 @@ function readAuth(){try{return JSON.parse(localStorage.getItem('junqi-auth')||'n
 function link(text,href){const a=document.createElement('a');a.href=href;a.textContent=text;return a;}
 function render(){
   const auth=readAuth(),actions=header.querySelector('.site-account'),nav=header.querySelector('.site-nav');actions.replaceChildren();nav.replaceChildren();
+  const languageChoice=document.createElement('span');languageChoice.className='language-switch';languageChoice.dataset.noI18n='';
+  for(const [value,label]of [['zh','中文'],['en','English']]){const button=document.createElement('button');button.type='button';button.className='text-action';button.textContent=label;button.lang=value;button.setAttribute('aria-pressed',String(language()===value));button.onclick=()=>setLanguage(value);languageChoice.append(button);}
+  actions.append(languageChoice);
   if(auth?.accountType==='bot'&&location.pathname!=='/bot-studio.html'){document.body.style.visibility='hidden';location.replace('/bot-studio.html');return;}
   header.querySelector('.site-brand').href=auth?.accountType==='bot'?'/bot-studio.html':'/';
   const themeButton=document.createElement('button');themeButton.type='button';themeButton.className='text-action theme-toggle';themeButton.textContent=currentTheme()==='light'?'深色模式':'浅色模式';themeButton.setAttribute('aria-pressed',String(currentTheme()==='light'));themeButton.onclick=()=>{localStorage.setItem('junqi-theme',currentTheme()==='light'?'dark':'light');applyTheme();window.dispatchEvent(new Event('junqi-theme'));render();};actions.append(themeButton);
@@ -41,6 +45,19 @@ function render(){
   if(profile){profile.replaceChildren();if(auth?.token){const rated=auth.ratedGames>0;const name=(rated?colorRating:colorUnrated)(link(auth.username,'/profile/'+encodeURIComponent(auth.username)),auth.rating);const details=document.createElement('p');details.textContent=auth.accountType==='bot'?'BOT 账号':rated?`${auth.rank} · ${auth.rating}`:'unrated';profile.append(name,details);}else profile.append(link('登录','/login.html'),document.createTextNode(' / '),link('注册','/register.html'));}
 }
 render();window.addEventListener('junqi-profile-refresh',render);window.addEventListener('junqi-page-change',render);window.addEventListener('storage',event=>{if(event.key==='junqi-theme')applyTheme();render();});
+window.addEventListener('junqi-language',()=>{render();localize(header);});
+const footer=document.createElement('footer');footer.className='site-footer';footer.innerHTML='<p><a href="https://junqi.bitbybit.dpdns.org">四国军棋</a> Copyright (C) 2026 <a href="https://bitbybit.dpdns.org" data-no-i18n>BitByBit</a></p><p><a href="https://github.com/BitByBitG/siguo-junqi">项目源码</a></p><p><span>系统时间：</span><time data-no-i18n></time></p>';document.body.append(footer);
+let serverOffset=null;const clock=footer.querySelector('time');
+function updateClock(){if(serverOffset===null){clock.textContent='—';return;}const date=new Date(Date.now()+serverOffset);clock.dateTime=date.toISOString();clock.textContent=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(date)+' (UTC+8)';}
+async function syncClock(){try{const start=Date.now(),response=await fetch('/api/time',{cache:'no-store'});if(!response.ok)return;const {serverTime}=await response.json();if(Number.isFinite(serverTime))serverOffset=serverTime-(start+Date.now())/2;}catch{}updateClock();}
+syncClock();setInterval(updateClock,1000);setInterval(syncClock,60000);
+let documentGeneration=0;const originalDocument=document.querySelector('main.document-shell')?.innerHTML;
+async function localizeDocument(){
+  const generation=++documentGeneration;const names={'/rules.html':'rules','/bot-api.html':'bot-api'};const name=names[location.pathname];if(!name)return;const main=document.querySelector('main.document-shell');if(!main)return;
+  if(language()==='zh'){main.innerHTML=originalDocument;localize(main);return;}
+  try{const response=await fetch(`/locales/en/${name}.html`);if(!response.ok)throw Error('English document unavailable');const html=await response.text();if(generation===documentGeneration&&language()==='en')main.innerHTML=html;}catch(error){console.error(error);}
+}
+window.addEventListener('junqi-language',localizeDocument);localizeDocument();localize();
 let sidebarRevision=0;
 async function sidebar(){
   const revision=++sidebarRevision;

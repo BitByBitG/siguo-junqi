@@ -1,0 +1,227 @@
+<p><a class="document-download" href="/BOT_API.en.md" download="BOT_API.en.md">Download BOT_API.md</a></p><h1>Junqi Bot API</h1>
+<p>Bots may participate only in <strong>Hidden</strong> Free-for-All or Partnerships. Other deployment/reveal modes and Landlord do not allow bots. A room with bots cannot be changed to unsupported modes.</p>
+<h2>Draws and permissions</h2>
+<p>The five-move bot loss rule and <code>quietMoves</code> / <code>quietMoveLimit</code> have been removed. Games with bots draw automatically after 16 consecutive whole-board legal moves with no piece deaths, or after initial seat count × 128 total moves. No rating is awarded. These limits remain after a bot is eliminated. Human-only games are exempt. Each bot has separate local/external and server-hosted time limits, default five seconds.</p>
+<p>Room fields include <code>ply</code>, <code>noCapturePly</code>, <code>noCapturePlyLimit</code> (16), <code>initialPlayerCount</code>, <code>totalPlyLimit</code> (256/384/512), <code>drawn</code> and <code>autoDrawReason</code> (<code>no-capture</code>, <code>move-limit</code>, or <code>null</code>). Only legal, nonduplicate moves increment counters. Any piece loss resets <code>noCapturePly</code>. Undo restores counters; restarts preserve them. A normal victory takes priority over automatic draw. Stop submitting actions when <code>phase</code> is <code>finished</code>.</p>
+<p>Bot accounts may use Bot Studio, program management and bot APIs only. Username lookup is case-insensitive; responses preserve original spelling. Site-wide mute affects chat; restricted accounts may log in and read permitted data but cannot act or host programs.</p>
+<h2>Integration methods</h2>
+<p>Use <a href="/bot-studio.html">Bot Studio</a> to paste JavaScript hosted in the server&#39;s isolated environment, or run an external client on your own machine. An approved bot account is required. The human room owner assigns accounts to seats and starts the game after readiness. All-bot games affect bot ratings, human-only games affect human ratings, and mixed games do not affect ratings.</p>
+<p>One account can control multiple rooms or seats, each with an independent <code>assignmentId</code> and hosted memory. Repeated seats average their changes and update account rating once. Finished assignments disappear from the active session. Logging out of the website does not stop a saved enabled program; use Stop Hosting.</p>
+<h2>Hosted program</h2>
+<p>Define synchronous <code>function act(state)</code> returning an action and optionally JSON <code>memory</code>:</p>
+<pre><code class="language-javascript">function act(state) {
+  if (state.phase === &#39;setup&#39;) return {action:&#39;ready&#39;, ready:true};
+  if (state.phase !== &#39;playing&#39; || state.turn !== state.viewerSeat) return null;
+  const move = state.legalMoves[0];
+  return move ? {action:&#39;move&#39;, from:move.from, to:move.to} : null;
+}
+</code></pre>
+<p>This minimal example uses the existing layout and first legal move, not a competitive strategy. Submit <code>setup</code> only when <code>programPrepared</code> is false, then <code>ready</code> on a later call to avoid endless redeployment.</p>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Additional fields</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>setup</td>
+<td><code>pieces:[{id,position},...]</code></td>
+<td>Submit all 25 friendly pieces</td>
+</tr>
+<tr>
+<td>ready</td>
+<td><code>ready:true/false</code></td>
+<td>Set readiness</td>
+</tr>
+<tr>
+<td>move</td>
+<td><code>from,to</code></td>
+<td>Make a move</td>
+</tr>
+<tr>
+<td>resign</td>
+<td>None</td>
+<td>Resign</td>
+</tr>
+<tr>
+<td>draw</td>
+<td><code>accept</code>, existing <code>offerId</code></td>
+<td>Offer, accept or decline a draw</td>
+</tr>
+</tbody></table>
+<p><code>memory</code> is JSON with at most 16384 serialized characters, isolated by assignment. Saving source resets runtime state. Source is limited to <strong>1 MiB UTF-8</strong>. QuickJS provides no Node.js, network, files, shell, module imports or asynchronous timers. JS heap is limited to 48 MiB; WASM memory to 64 MiB. A Worker enforces execution time. Use <code>Date.now()</code> and return before the deadline. Limits are configured per account from 1–120 seconds, with a scheduling margin deducted from the available program budget. Errors are reported and retried, but failing to submit a legal move before the turn deadline loses the seat. Stop hosting before using an external client on that assignment.</p>
+<h2>External clients and encryption</h2>
+<p>Business APIs use <strong>HTTPS plus application-layer encryption</strong>. Plain JSON business requests normally return 426. Authorization and request bodies are inside the encrypted envelope; the server then checks account, assignment and move permissions.</p>
+<p>Download <a href="/downloads/secure-client.js">secure-client.js</a> into an ESM Node.js project. Node 18+ is supported without extra npm packages.</p>
+<pre><code class="language-javascript">import {createSecureClient} from &#39;./secure-client.js&#39;;
+const client = createSecureClient(process.env.BOT_SERVER);
+const response = await client.fetch(&#39;/api/bot/login&#39;, {
+  method:&#39;POST&#39;, headers:{&#39;Content-Type&#39;:&#39;application/json&#39;},
+  body:JSON.stringify({username:process.env.BOT_USERNAME,password:process.env.BOT_PASSWORD})
+});
+const account = await response.json();
+if (!response.ok) throw Error(account.error);
+const headers = {Authorization:`Bearer ${account.token}`};
+const session = await (await client.fetch(&#39;/api/bot/session&#39;,{headers})).json();
+for (const assignment of session.assignments) {
+  const url = `/api/bot/rooms/${assignment.code}?assignmentId=${encodeURIComponent(assignment.assignmentId)}`;
+  const state = await (await client.fetch(url,{headers})).json();
+  console.log(assignment.seat,state.phase,state.legalMoves.length);
+}
+</code></pre>
+<p>The sample only logs in and reads assignments. A real bot polls sessions, maintains independent state per assignment, and submits legal moves on its turn. A complete reference client is available as <a href="/downloads/siguo-junqi-bot.mjs">siguo-junqi-bot.mjs</a>.</p>
+<h3>Implementing the encrypted transport</h3>
+<ol>
+<li>Generate RSA-OAEP keys (reference: 3072 bits, SHA-256). POST plain JSON <code>{publicKey: publicJWK}</code> to <code>/api/crypto</code>.</li>
+<li>Receive channel <code>id</code> and Base64 <code>key</code>. RSA-decrypt <code>key</code> to obtain the 32-byte AES key.</li>
+<li>Encrypt each UTF-8 JSON request with AES-256-GCM, a random 12-byte IV, 128-bit authentication tag, and UTF-8 AAD <code>client-v1</code>. Plaintext: <code>{kind:&quot;http&quot;,url:&quot;/api/...&quot;,method:&quot;GET&quot;,authorization:&quot;Bearer ...&quot;,body:{},time:millisecondTimestamp,nonce:uniqueString}</code>. Login has no authorization; GET may omit body.</li>
+<li>POST <code>{id,iv:Base64,data:Base64}</code> to <code>/api/secure</code>. <code>data</code> is ciphertext followed by the GCM tag, matching WebCrypto output.</li>
+<li>Decrypt responses with the same AES key and AAD <code>server-v1</code>. The decrypted JSON <code>value</code> is the business response. Validate time and nonce. HTTP status preserves the business status.</li>
+</ol>
+<p>The server allows at most two minutes of time skew and rejects repeated nonces. Recreate lost or expired channels. Do not log credentials or keys. Encryption protects transport integrity; the server still processes plaintext and compromised endpoints are outside this protection. Validate HTTPS certificates.</p>
+<h2>Authentication and directory</h2>
+<p><code>POST /api/bot/login</code> with <code>{username,password}</code> returns <code>token,username,accountType</code>. Use Bearer authorization for business requests. Tokens normally last seven days; log in again after logout, password changes, deletion or server restart. Human tokens receive 403 on bot-only routes.</p>
+<p><code>GET /api/bots</code> returns approved bots with <code>username,rating,online,seats,localTurnLimitMs,serverTurnLimitMs,runtimeMode</code>. <code>seats</code> counts occupied assignments; the two time limits apply to external and hosted clients. Bot and human rankings are separate.</p>
+<h2>Reading state</h2>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Response</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>GET /api/bot/board</td>
+<td><code>nodes,roads,rails,straightRailLines,pieceInfo,turnLimitMs</code></td>
+</tr>
+<tr>
+<td>GET /api/bot/session</td>
+<td><code>apiVersion:2,username,assignments</code></td>
+</tr>
+<tr>
+<td>GET /api/bot/rooms/CODE?assignmentId=ID</td>
+<td>Assignment-specific state</td>
+</tr>
+</tbody></table>
+<p>Each assignment is <code>{code,seat,assignmentId}</code>. With no seat the array is empty. Legacy <code>assignment</code> is an object only with exactly one seat, otherwise null. Always send <code>assignmentId</code>. Board and room responses currently use <code>apiVersion:1</code>, separately from the session version.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>code / assignmentId / revision</td>
+<td>Room, seat allocation and state revision</td>
+</tr>
+<tr>
+<td>viewerSeat / turn</td>
+<td>Your seat / active seat (<code>north,east,south,west</code>)</td>
+</tr>
+<tr>
+<td>phase / mode</td>
+<td><code>setup,playing,finished</code>; <code>ffa,alliance</code></td>
+</tr>
+<tr>
+<td>activeSeats</td>
+<td>Territories enabled for this game</td>
+</tr>
+<tr>
+<td>occupiedSeats / livingSeats</td>
+<td>Noneliminated occupied seats / territories with surviving pieces</td>
+</tr>
+<tr>
+<td>ready / eliminated / winner</td>
+<td>Your readiness, elimination and winning side</td>
+</tr>
+<tr>
+<td>serverTime / deadline</td>
+<td>Server milliseconds / turn deadline or null</td>
+</tr>
+<tr>
+<td>pieces / records</td>
+<td>Board pieces / all records including null positions</td>
+</tr>
+<tr>
+<td>battles</td>
+<td>Public attacker/defender IDs and outcomes</td>
+</tr>
+<tr>
+<td>legalMoves</td>
+<td>Legal <code>{from,to}</code> pairs; empty outside your turn</td>
+</tr>
+<tr>
+<td>logs / lastMove</td>
+<td>Visible battle log / last move</td>
+</tr>
+</tbody></table>
+<p>Pieces are <code>{id,owner,position,initialPosition,moved,type}</code>. Only friendly or publicly revealed identities have a real <code>type</code>; hidden enemies and allies have null. Debug and finished games do not disclose additional information through bot APIs. IDs are identifiers; do not infer identities from array ordering.</p>
+<p>Territory positions use IDs such as <code>north-0-0</code>, with zero-based rows/columns, row zero at the front and row five at the rear. Read central positions from <code>board.nodes</code>. Use <code>straightRailLines</code> for corner railways rather than screen geometry.</p>
+<h2>Submitting actions</h2>
+<p>POST <code>/api/bot/rooms/CODE/ACTION</code> with <code>assignmentId,revision,requestId</code> plus action fields. Supported external actions are <code>setup</code>, <code>ready</code>, <code>move</code> and <code>resign</code>. Setup requires all 25 friendly IDs and unique positions; it cannot change types. Move requires your turn, a valid move and an unexpired deadline.</p>
+<p>Success returns <code>{ok:true,requestId,revision}</code>. Request IDs contain 6–80 letters, digits, underscores or hyphens; UUIDs are recommended. If a network failure makes success uncertain, retry the same ID and identical body. The most recent 128 successful requests are deduplicated. Never reuse an ID for a different action.</p>
+<p>Revision changes for gameplay, deployment, readiness and participant updates, but not chat or heartbeats. On 409 reread state. Removing and readding a bot creates a new assignment ID; old allocations cannot act for it.</p>
+<h2>Errors and recovery</h2>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>400</td>
+<td>Inspect <code>error</code>: invalid data, layout, move or envelope</td>
+</tr>
+<tr>
+<td>401</td>
+<td>Log in again</td>
+</tr>
+<tr>
+<td>403</td>
+<td>Check account and assignment permission</td>
+</tr>
+<tr>
+<td>404</td>
+<td>Resource or endpoint missing</td>
+</tr>
+<tr>
+<td>409</td>
+<td>Reread changed state or check hosting conflict</td>
+</tr>
+<tr>
+<td>426</td>
+<td>Use encrypted transport</td>
+</tr>
+<tr>
+<td>429</td>
+<td>Back off before retrying</td>
+</tr>
+</tbody></table>
+<p>The effective turn limit depends on the account&#39;s current runtime mode and includes polling and network time. Use <code>deadline-serverTime</code> and leave a margin. The server eliminates timed-out bots instead of making random moves. After server restart, login tokens expire; saved enabled hosted programs reconnect. For offline programs check enabled state, assigned seats, reported errors and server logs.</p>
+<h2>Program management</h2>
+<p>These encrypted routes use the bot&#39;s web-login token and affect only its own program:</p>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Request / response</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>GET /api/program</td>
+<td><code>source,enabled,message,assignments</code> and status</td>
+</tr>
+<tr>
+<td>PUT /api/program</td>
+<td><code>{source}</code>: validate, save, stop and reset memory</td>
+</tr>
+<tr>
+<td>POST /api/program/run</td>
+<td><code>{enabled:true/false}</code>: start or stop</td>
+</tr>
+</tbody></table>
+<p><a href="/BOT_API.en.md">Download this document</a>.</p>

@@ -1,4 +1,5 @@
 import {renderRichChatBody,attachChatFold,releaseChatFolds} from './chat-common.js';
+import {translateText,language} from './i18n.js';
 import {copySourceButton,renderMutedUsers} from './chat-controls.js';
 import {emojiGroups,emojis} from './emojis.js';
 import {colorRating, colorUnrated} from './rating-colors.js';
@@ -58,7 +59,7 @@ socket.on('chat-mention', message => {
   showToast(`${message.name} 在聊天中提到了你`);
   if (!mentionNotifications || !('Notification' in window) || Notification.permission !== 'granted') return;
   try {
-    const notification = new Notification('四国军棋：有人 @ 你', {
+    const notification = new Notification(translateText('四国军棋：有人 @ 你',language()), {
       body: `${message.name}：${message.text}`, tag: `junqi-mention-${message.code}`
     });
     notification.onclick = () => {
@@ -86,8 +87,8 @@ function updateTurnNotification(next) {
   if (sessionStorage.getItem('junqi-last-notified-turn') === key) return;
   try {
     activeTurnNotification?.close();
-    const notification = new Notification('四国军棋：轮到你走棋了', {
-      body: `${next.viewerName}，房间 ${next.code} 等待你行动。`,
+    const notification = new Notification(translateText('四国军棋：轮到你走棋了',language()), {
+      body: language()==='en'?`${next.viewerName}, your turn in room ${next.code}.`:`${next.viewerName}，房间 ${next.code} 等待你行动。`,
       tag: 'junqi-my-turn'
     });
     activeTurnNotification = notification;
@@ -353,7 +354,7 @@ function renderRoomList() {
     row.className = "room-row";
     const phase = { setup: "布阵中", playing: "对局中", finished: "已结束" }[room.phase];
     const info=document.createElement('div'),title=document.createElement('strong'),code=document.createElement('small'),details=document.createElement('span'),enter=document.createElement('button');
-    title.textContent=room.name||room.code;code.textContent=room.code;
+    title.dataset.noI18n='';title.textContent=room.name||room.code;code.textContent=room.code;
     const modeName={ffa:'四方混战',alliance:'对家结盟',random:'半随机',machine_random:'随机（机房规则）',landlord:'斗地主'}[room.mode]||room.mode;
     details.textContent=`${room.phase==='setup'?'自动计分':room.rated ? (room.ratingPool==='bot'?'BOT Rated':'Rated') : '不计分'} · ${modeName} · ${room.players}/${room.capacity} 人${room.bots ? `（${room.bots} BOT）` : ''} · ${phase}`;
     info.append(title,code,details);enter.type='button';enter.textContent=room.phase==='finished'?'查看 / 复盘':'进入';row.append(info,enter);
@@ -793,14 +794,14 @@ function openEmojiPicker(anchor, emit) {
   const grid=document.createElement('div');grid.className='emoji-grid';
   const groups={'最近':recent,...Object.fromEntries(Object.entries(emojiGroups).map(([k,v])=>[k,v.split(' ')]))};
   const choose=key=>{
-    grid.replaceChildren();for(const button of tabs.children)button.setAttribute('aria-pressed',String(button.textContent===key));
+    grid.replaceChildren();for(const button of tabs.children)button.setAttribute('aria-pressed',String(button.dataset.emojiGroup===key));
     if(!groups[key].length){const hint=document.createElement('span');hint.className='emoji-empty';hint.textContent='使用过的表情会显示在这里';grid.append(hint);}
     for(const emoji of groups[key]) {
       const button=document.createElement('button');button.type='button';button.textContent=emoji;button.title=emoji;button.setAttribute('aria-label',emoji);
       button.onclick=()=>{try{localStorage.setItem('junqi-recent-emojis',JSON.stringify([emoji,...recent.filter(e=>e!==emoji)].slice(0,24)));}catch{}emit(emoji);closeEmojiPicker();if(anchor.isConnected)anchor.focus({preventScroll:true});};grid.append(button);
     }
   };
-  for(const key of Object.keys(groups)){const button=document.createElement('button');button.type='button';button.textContent=key;button.onclick=()=>choose(key);tabs.append(button);}
+  for(const key of Object.keys(groups)){const button=document.createElement('button');button.type='button';button.dataset.emojiGroup=key;button.textContent=key;button.onclick=()=>choose(key);tabs.append(button);}
   panel.append(tabs,grid);document.body.append(panel);choose(recent.length?'最近':'表情');
   const rect=anchor.getBoundingClientRect();
   panel.style.left=Math.max(8,Math.min(rect.left,window.innerWidth-panel.offsetWidth-8))+'px';

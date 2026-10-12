@@ -74,7 +74,7 @@ function checkMentions(g){
   if(seen.has(m.id)||m.recalled||m.name===auth?.username)continue;
   const names=[...m.text.matchAll(/(?:^|[^A-Za-z0-9_\u4e00-\u9fff@])@([A-Za-z0-9_\u4e00-\u9fff]+)/g)].map(x=>x[1].toLowerCase());
   if(!names.includes(auth?.username?.toLowerCase()))continue;
-  try{const n=new Notification('四国军棋：有人 @ 你',{body:`${m.name}：${m.text}`,tag:`junqi-mention-group-${g.id}`});n.onclick=()=>{window.focus();input.focus();n.close();};}catch{}
+  try{const n=new Notification(localStorage.getItem('junqi-language')==='en'?'Junqi: You Were Mentioned':'四国军棋：有人 @ 你',{body:`${m.name}：${m.text}`,tag:`junqi-mention-group-${g.id}`});n.onclick=()=>{window.focus();input.focus();n.close();};}catch{}
  }
 }
 

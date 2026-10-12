@@ -2,6 +2,7 @@
 import {displayImage} from './chat-images.js';
 
 export function renderRichChatBody(body,text,token){
+  body.dataset.noI18n='';
   const template=document.createElement('template');
   if(window.marked&&window.DOMPurify)template.innerHTML=DOMPurify.sanitize(marked.parse(String(text||''),{breaks:true}),{
     USE_PROFILES:{html:true},

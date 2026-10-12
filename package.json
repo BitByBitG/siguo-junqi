@@ -1,6 +1,6 @@
 {
   "name": "siguo-junqi",
-  "version": "2.9.14",
+  "version": "2.9.16",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,8 @@
     "test": "node --test --test-concurrency=1",
     "benchmark:bots": "node scripts/benchmark-bots.js",
     "build:bot": "node scripts/build-reference-bot.js",
-    "build:pages": "node scripts/build-pages.js"
+    "build:pages": "node scripts/build-pages.js && node scripts/build-locales.js",
+    "build:locales": "node scripts/build-locales.js"
   },
   "engines": {
     "node": ">=18"
