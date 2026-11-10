@@ -1,6 +1,8 @@
 # Junqi Bot API
 
-Bots may participate only in **Hidden** Free-for-All or Partnerships. Other deployment/reveal modes and Landlord do not allow bots. A room with bots cannot be changed to unsupported modes.
+In Junqi, bots may participate only in **Hidden** Free-for-All or Partnerships. Other deployment/reveal modes and Landlord do not allow bots. A room with bots cannot be changed to unsupported modes.
+
+Texas Hold’em also supports external bots by default, without an additional administrator permission grant. See [Hold’em BOT API and runnable client](HOLDEM_BOT_API.md).
 
 ## Draws and permissions
 

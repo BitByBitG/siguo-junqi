@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import {Table,STAGES} from './holdem-engine.js';
 import {atomicWrite} from './room-archive.js';
 import {emojis} from '../public/emojis.js';
-import {ChipBank,chipInteger,beijingDay} from './holdem-bank.js';
+import {ChipBank,chipInteger,beijingDay,holdemEligible} from './holdem-bank.js';
 
 export function installHoldem(app,{accounts,authorize,profile,saveAccounts,canonicalUsername,isAdmin,changeChat,groupCan,isGloballyMuted,dataDir,onAccountChange,canCreateRoom,useRoomQuota}){
  const rooms=new Map(),seen=new Map(),limits=new Map(),file=path.join(dataDir,'holdem-rooms.json');let archive=null,inTransaction=false,dirty=false,synchronizedDay=-1;
@@ -26,17 +26,37 @@ export function installHoldem(app,{accounts,authorize,profile,saveAccounts,canon
  const error=(message,status=400)=>Object.assign(Error(message),{status});
  const int=(v,min,max)=>{v=Number(v);if(!Number.isSafeInteger(v)||v<min||v>max)throw error(`数值范围为 ${min}～${max}`);return v;};
  const text=(v,max)=>{if(typeof v!=='string'||!v.trim()||v.length>max)throw error('文字长度无效');return v.trim();};
- function permitted(n){const a=accounts[n];return !!a&&a.type!=='bot'&&a.status!=='pending'&&!a.blocked&&a.holdemEnabled===true;}
- function user(req){const n=authorize(req)?.username;if(!n)throw error('请先登录',401);if(!permitted(n))throw error('德州扑克权限未开通或已停用',403);seen.set(n,Date.now());return n;}
+ function permitted(n){return holdemEligible(accounts[n]);}
+ function user(req){
+  const identity=authorize(req),n=identity?.username;
+  if(!n)throw error('请先登录',401);
+  if(req.path.startsWith('/api/bot/holdem/')&&(accounts[n]?.type!=='bot'||identity.assignmentId||identity.hosted))throw error('请使用外部 BOT 账号登录会话',403);
+  if(!permitted(n))throw error('德州扑克权限未开通或已停用',403);
+  seen.set(n,Date.now());return n;
+ }
  function room(req,n){const r=rooms.get(req.params.id);if(!r)throw error('房间不存在',404);if(!r.members.has(n))throw error('请先进入房间',403);return r;}
  const detail=r=>({id:r.id,name:r.name,owner:r.owner,createdAt:r.createdAt,members:r.members.size,max:r.table.max,players:r.table.players.filter(Boolean).length,phase:r.table.phase,hand:r.table.hand,sb:r.table.sb,bb:r.table.bb});
  function view(r,n){settle();const v=r.table.view(n);return {...detail(r),...v,wallet:wallet(n),version:r.table.version,viewerName:n,members:[...r.members].filter(n=>accounts[n]).map(username=>({username,...profile(username),online:Date.now()-(seen.get(username)||0)<15000})),players:v.players.map(p=>p?{...p,...profile(p.id),username:p.id,online:Date.now()-(seen.get(p.id)||0)<15000,connected:Date.now()-(seen.get(p.id)||0)<15000}:null),chat:r.chat.map(m=>({...m,...profile(m.name)})),muted:r.muted,canModerate:r.owner===n||!!accounts[n]?.admin,serverTime:Date.now()};}
  function owner(req,r,n){if(r.owner!==n&&!isAdmin(req))throw error('只有房主或管理员可以操作',403);}
  function mutation(n){if(!groupCan(n,'play'))throw error('你所在分组已暂停下棋功能',403);const b=limits.get(n)||{time:Date.now(),count:0};if(Date.now()-b.time>60000){b.time=Date.now();b.count=0;}limits.set(n,b);if(++b.count>180)throw error('请求过于频繁',429);}
- const route=(method,url,fn)=>app[method](url,async(req,res)=>{try{res.set('Cache-Control','no-store');if(method==='get'){syncDay();fn(req,res);return;}if(fn.constructor.name==='AsyncFunction'){await fn(req,res);return;}let body,status=200;const reply={json:value=>{body=value;return reply;},status:value=>{status=value;return reply;}};transaction(()=>fn(req,reply));res.status(status).json(body);}catch(e){res.status(e.status||400).json({error:e.message});}});
+ // Both transports share the same transactions, chip accounting and filtered views.
+ const route=(method,url,fn)=>{
+  const handler=async(req,res)=>{
+   try{
+    res.set('Cache-Control','no-store');
+    if(method==='get'){syncDay();fn(req,res);return;}
+    if(fn.constructor.name==='AsyncFunction'){await fn(req,res);return;}
+    let body,status=200;
+    const reply={json:value=>{body=value;return reply;},status:value=>{status=value;return reply;}};
+    transaction(()=>fn(req,reply));res.status(status).json(body);
+   }catch(e){res.status(e.status||400).json({error:e.message});}
+  };
+  app[method](url,handler);
+  if(url.startsWith('/api/holdem/'))app[method](url.replace('/api/holdem/','/api/bot/holdem/'),handler);
+ };
  route('get','/api/holdem/wallet',(req,res)=>{const n=user(req);res.json({...wallet(n),config:bank.config});});
- route('get','/api/holdem/standings',(req,res)=>{user(req);res.json(Object.keys(bank.wallets).filter(n=>accounts[n]&&accounts[n].type!=='bot'&&accounts[n].status!=='pending').map(username=>({username,...profile(username),...wallet(username)})).sort((a,b)=>b.total-a.total||a.username.localeCompare(b.username)).map((v,i)=>({position:i+1,...v})));});
- route('get','/api/holdem/rooms',(req,res)=>{user(req);res.json([...rooms.values()].map(detail));});
+ route('get','/api/holdem/standings',(req,res)=>{user(req);res.json(Object.keys(bank.wallets).filter(n=>accounts[n]&&accounts[n].status!=='pending').map(username=>({username,...profile(username),...wallet(username)})).sort((a,b)=>b.total-a.total||a.username.localeCompare(b.username)).map((v,i)=>({position:i+1,...v})));});
+ route('get','/api/holdem/rooms',(req,res)=>{const n=user(req);res.json([...rooms.values()].map(r=>({...detail(r),joined:r.members.has(n)})));});
  route('post','/api/holdem/rooms',(req,res)=>{
   const n=user(req);mutation(n);const quota=canCreateRoom(n);if(!quota.ok)throw error(quota.error,403);if(rooms.size>=100)throw error('房间数量已满');const b=req.body||{},max=int(b.max??6,2,9),stack=int(b.stack??2000,200,100000),sb=int(b.sb??10,1,1000),time=int(b.time??30,10,120);if(stack<sb*20)throw error('初始筹码至少为大盲的 10 倍');
   const id=crypto.randomBytes(4).toString('hex').toUpperCase(),r={id,name:b.name?text(b.name,40):id,owner:n,createdAt:Date.now(),members:new Set([n]),chat:[],muted:[],table:new Table({max,stack,sb,time})};r.table.funded=true;rooms.set(id,r);save();useRoomQuota(n);res.status(201).json(view(r,n));
@@ -47,7 +67,7 @@ export function installHoldem(app,{accounts,authorize,profile,saveAccounts,canon
   const n=user(req),r=room(req,n);mutation(n);const t=r.table,b=req.body||{},p=t.players.find(p=>p?.id===n);
   if(b.op==='seat'){const buyIn=int(b.buyIn??t.stack,Math.max(1,t.bb*10),100000);bank.debit(n,buyIn);t.seat(n,n,int(b.index,0,t.max-1),buyIn);bank.record('buyin',n,[n],buyIn,{room:r.id});}
   else if(b.op==='stand')t.leave(n);
-  else if(b.op==='ready'){if(!p||p.leaving)throw error('请先落座');if(!['waiting','finished'].includes(t.phase))throw error('请等待本手结束');if(!p.chips)throw error('筹码不足，请离座后重新买入');p.ready=!p.ready;t.version++;}
+  else if(b.op==='ready'){if(!p||p.leaving)throw error('请先落座');if(!['waiting','finished'].includes(t.phase))throw error('请等待本手结束');if(!p.chips)throw error('筹码不足，请离座后重新买入');if(accounts[n]?.type==='bot'&&typeof b.ready!=='boolean')throw error('BOT 准备操作需要 ready 布尔值');if(b.ready!==undefined&&typeof b.ready!=='boolean')throw error('ready 必须为布尔值');const ready=b.ready??!p.ready;if(p.ready!==ready){p.ready=ready;t.version++;}}
   else if(b.op==='start'){owner(req,r,n);t.start();}
   else if(b.op==='bet'){if(b.hand!==t.hand||b.turn!==t.turn||b.version!==t.version)throw error('牌局状态已更新，请重试',409);t.action(n,b.type,b.amount);}
   else if(b.op==='leave'){t.leave(n);r.members.delete(n);if(r.owner===n)r.owner=[...r.members][0]||n;save();return res.json({ok:true});}
@@ -63,11 +83,11 @@ export function installHoldem(app,{accounts,authorize,profile,saveAccounts,canon
   else if(b.action==='recall-own'){if(!m||m.name!==n||Date.now()-m.time>300000)throw error('超过 5 分钟，无法撤回');m.text='';m.recalled=true;delete m.reactions;}
   else{owner(req,r,n);if(!['mute','unmute','delete'].includes(b.action))throw error('无效操作');const message=changeChat(r.chat,r.muted,{...b,username:b.username?canonicalUsername(b.username):undefined},isAdmin(req)?3:1,n);if(message)throw error(message);}save();res.json({ok:true});
  });
- route('get','/api/admin/holdem',(req,res)=>{if(!isAdmin(req))throw error('需要管理员权限',403);res.json({config:bank.config,audit:bank.audit.slice(-200).reverse(),accounts:Object.keys(accounts).filter(n=>accounts[n].type!=='bot'&&accounts[n].status!=='pending').map(username=>({username,...profile(username),...(bank.wallets[username]?wallet(username):{balance:0,tableChips:0,committed:0,total:0})})),rooms:[...rooms.values()].map(detail),bytes:fs.existsSync(file)?fs.statSync(file).size:0});});
+ route('get','/api/admin/holdem',(req,res)=>{if(!isAdmin(req))throw error('需要管理员权限',403);res.json({config:bank.config,audit:bank.audit.slice(-200).reverse(),accounts:Object.keys(accounts).filter(n=>accounts[n].status!=='pending').map(username=>({username,...profile(username),...(bank.wallets[username]?wallet(username):{balance:0,tableChips:0,committed:0,total:0})})),rooms:[...rooms.values()].map(detail),bytes:fs.existsSync(file)?fs.statSync(file).size:0});});
  route('patch','/api/admin/holdem/settings',(req,res)=>{if(!isAdmin(req))throw error('需要管理员权限',403);bank.configure(req.body.initial,req.body.daily,authorize(req)?.username||'admin-key');res.json({ok:true,config:bank.config});});
  route('post','/api/admin/holdem/chips',(req,res)=>{if(!isAdmin(req))throw error('需要管理员权限',403);const b=req.body||{};if(!Array.isArray(b.usernames)||!b.usernames.length||b.usernames.length>10000)throw error('参数无效');const names=[...new Set(b.usernames.map(canonicalUsername))];bank.grant(names,b.amount,authorize(req)?.username||'admin-key',b.requestId);res.json({ok:true});});
  route('patch','/api/admin/holdem/permissions',async(req,res)=>{
-  if(!isAdmin(req))throw error('需要管理员权限',403);const b=req.body||{};if(typeof b.enabled!=='boolean'||!Array.isArray(b.usernames)||!b.usernames.length||b.usernames.length>1000)throw error('参数无效');const names=[...new Set(b.usernames.map(canonicalUsername))];for(const n of names)if(!accounts[n]||accounts[n].type==='bot')throw error('账号不存在或不是玩家账号');
+  if(!isAdmin(req))throw error('需要管理员权限',403);const b=req.body||{};if(typeof b.enabled!=='boolean'||!Array.isArray(b.usernames)||!b.usernames.length||b.usernames.length>1000)throw error('参数无效');const names=[...new Set(b.usernames.map(canonicalUsername))];for(const n of names)if(!accounts[n]||accounts[n].status==='pending')throw error('账号不存在或尚未审核');
   transaction(()=>bank.syncAll());const previous=names.map(n=>accounts[n].holdemEnabled);for(const n of names)accounts[n].holdemEnabled=b.enabled;try{await saveAccounts.flush();}catch(e){names.forEach((n,i)=>accounts[n].holdemEnabled=previous[i]);throw e;}
   transaction(()=>{for(const n of names){bank.sync(n);if(!b.enabled)remove(n);onAccountChange(n);}});res.json({ok:true});
  });

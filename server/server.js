@@ -1,5 +1,6 @@
 import {atomicWrite,resetRoomsOnce,writeRoomsArchive} from './room-archive.js';
 import {installHoldem} from './holdem.js';
+import {holdemEligible} from './holdem-bank.js';
 import {installDdz} from './ddz.js';
 import { ratingClass } from '../public/rating-colors.js';
 import { initDrawCounters, recordBotActivity, autoDrawReason } from './bot-activity.js';
@@ -253,7 +254,7 @@ function accountProfile(username) {
   if (!account) return { rating: INITIAL_RATING, ratedGames: 0, peakRating: INITIAL_RATING, ...ratingRank(INITIAL_RATING) };
   normalizeAccount(account);
   const info = ratingRank(account.rating);
-  info.holdemEnabled=account.type!=='bot'&&!account.blocked&&account.holdemEnabled===true;
+  info.holdemEnabled=holdemEligible(account);
   return { holdemEnabled:info.holdemEnabled, blocked:!!account.blocked, globallyMuted:globalBans.includes(username), avatar: account.avatar?.id || null, signature:account.signature||'', accountType: account.type || "human", admin: !!account.admin, rating: account.rating, ratedGames: account.ratedGames, peakRating: account.peakRating, rank: info.rank, rankClass: info.rankClass, groupId:account.groupId||'default', groupName:groupData.groups[account.groupId||'default']?.name||'默认分组', botLocalTurnLimitMs:account.type==='bot'?account.botLocalTurnLimitMs:null, botServerTurnLimitMs:account.type==='bot'?account.botServerTurnLimitMs:null, botServerHostingDisabled:account.type==='bot'?!!account.botServerHostingDisabled:null };
 }
 
@@ -409,7 +410,7 @@ function broadcastModeration(){for(const socket of io.sockets.sockets.values())i
 function authorizeRequest(req){
   if(adminKeyMatches(req))return {admin:true};
   const session=sessions.get(String(req.headers.authorization||'').replace(/^Bearer /,''));
-  return session&&session.expiresAt>Date.now()&&accounts[session.username]?{username:session.username}:null;
+  return session&&session.expiresAt>Date.now()&&accounts[session.username]?{username:session.username,assignmentId:session.assignmentId,hosted:session.hosted}:null;
 }
 let holdem,ddz;
 function canEnter(username,code){return ddz?.canEnter(username,code)||holdem?.canEnter(username,code)||(rooms.has(code)&&[...io.sockets.sockets.values()].some(s=>authenticated(s)&&s.data.username===username&&s.data.roomCode===code));}
