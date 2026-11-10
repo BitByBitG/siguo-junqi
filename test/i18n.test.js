@@ -7,6 +7,9 @@ test('Chinese interface replaces legacy English labels',()=>{
   assert.equal(translateText('unrated'),'未评级');
 });
 test('English uses Junqi and translates navigation/actions',()=>{
+  assert.equal(translateText('德州扑克','en'),'Texas Hold’em');
+  assert.equal(translateText('开通德州扑克权限','en'),'Enable Hold’em');
+  assert.equal(translateText('同花顺','en'),'Straight Flush');
   assert.equal(translateText('四国军棋','en'),'Junqi');
   assert.equal(translateText('申请和棋','en'),'Offer Draw');
   assert.equal(translateText('已禁言：','en'),'Muted:');

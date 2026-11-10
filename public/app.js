@@ -1,3 +1,5 @@
+import {openEmojiPicker} from './emoji-picker.js';
+import {showToast} from './toast.js';
 import {renderRichChatBody,attachChatFold,releaseChatFolds} from './chat-common.js';
 import {translateText,language} from './i18n.js';
 import {copySourceButton,renderMutedUsers} from './chat-controls.js';
@@ -18,7 +20,6 @@ const capacityInput = $("#room-capacity");
 const modeInput = $("#room-mode");
 const visibilityInput = $("#room-visibility");
 const boardSvg = $("#game-board");
-const toast = $("#toast");
 
 const seatShort = { north: "北", east: "东", south: "南", west: "西" };
 const seatColors = { north: "#70757a", east: "#6b4c35", south: "#274634", west: "#263a55" };
@@ -27,7 +28,6 @@ let boardMeta = null;
 let state = null;
 let selected = null;
 let awaitingRoom = false;
-let toastTimer = null;
 let auth = null;
 let mentionNotifications = localStorage.getItem('junqi-mention-notifications') === '1';
 const mentionButton = $('#mention-notifications');
@@ -161,13 +161,6 @@ function joinAddressRoom() {
   const saved = getSession();
   awaitingRoom = true;
   socket.emit('join-room', { code: code.toUpperCase(), authToken: auth.token, token: saved?.code === code.toUpperCase() ? saved.token : undefined });
-}
-
-function showToast(message, kind = "error") {
-  clearTimeout(toastTimer);
-  toast.textContent = message;
-  toast.className = `toast show ${kind === "success" ? "success" : ""}`;
-  toastTimer = setTimeout(() => { toast.className = "toast"; }, 2800);
 }
 
 function seatColor(seat) {
@@ -783,34 +776,6 @@ if (window.marked) marked.use({ extensions: [{
   },
   renderer: token => escapeHtml(token.raw)
 }] });
-let emojiPicker = null;
-function closeEmojiPicker() { emojiPicker?.remove(); emojiPicker=null; }
-function openEmojiPicker(anchor, emit) {
-  closeEmojiPicker();
-  const panel=document.createElement('div');panel.className='emoji-picker';panel.setAttribute('role','dialog');panel.setAttribute('aria-label','选择表情');
-  emojiPicker=panel;
-  let recent=[];try { recent=JSON.parse(localStorage.getItem('junqi-recent-emojis')||'[]').filter(e=>emojis.includes(e)).slice(0,24); } catch {}
-  const tabs=document.createElement('div');tabs.className='emoji-tabs';
-  const grid=document.createElement('div');grid.className='emoji-grid';
-  const groups={'最近':recent,...Object.fromEntries(Object.entries(emojiGroups).map(([k,v])=>[k,v.split(' ')]))};
-  const choose=key=>{
-    grid.replaceChildren();for(const button of tabs.children)button.setAttribute('aria-pressed',String(button.dataset.emojiGroup===key));
-    if(!groups[key].length){const hint=document.createElement('span');hint.className='emoji-empty';hint.textContent='使用过的表情会显示在这里';grid.append(hint);}
-    for(const emoji of groups[key]) {
-      const button=document.createElement('button');button.type='button';button.textContent=emoji;button.title=emoji;button.setAttribute('aria-label',emoji);
-      button.onclick=()=>{try{localStorage.setItem('junqi-recent-emojis',JSON.stringify([emoji,...recent.filter(e=>e!==emoji)].slice(0,24)));}catch{}emit(emoji);closeEmojiPicker();if(anchor.isConnected)anchor.focus({preventScroll:true});};grid.append(button);
-    }
-  };
-  for(const key of Object.keys(groups)){const button=document.createElement('button');button.type='button';button.dataset.emojiGroup=key;button.textContent=key;button.onclick=()=>choose(key);tabs.append(button);}
-  panel.append(tabs,grid);document.body.append(panel);choose(recent.length?'最近':'表情');
-  const rect=anchor.getBoundingClientRect();
-  panel.style.left=Math.max(8,Math.min(rect.left,window.innerWidth-panel.offsetWidth-8))+'px';
-  panel.style.top=Math.max(8,Math.min(rect.bottom+5,window.innerHeight-panel.offsetHeight-8))+'px';
-  tabs.querySelector('button').focus();
-}
-document.addEventListener('pointerdown',event=>{if(emojiPicker&&!emojiPicker.contains(event.target)&&!event.target.closest('.reaction-add'))closeEmojiPicker();});
-document.addEventListener('keydown',event=>{if(event.key==='Escape')closeEmojiPicker();});
-window.addEventListener('resize',closeEmojiPicker);
 function isAdminNow() { return !!auth?.admin; }
 function canModerateChat(scope, item) {
   if (item.admin && item.name !== auth?.username) return false;

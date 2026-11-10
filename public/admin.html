@@ -5,18 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>账号管理 · 四国军棋</title>
     <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/holdem.css" />
   <link rel="icon" type="image/png" href="/favicon.png?v=240"><link rel="apple-touch-icon" href="/favicon.png?v=240"><link rel="stylesheet" href="/cf-layout.css"></head>
   <body class="admin-page"><script type="module" src="/site-shell.js"></script>
     <main class="admin-shell">
-      <header><h1>管理</h1></header><nav id="admin-directory" class="admin-directory" aria-label="管理目录"></nav>
+      <header><h1>管理</h1></header><div class="admin-mode-tabs"><button type="button" data-admin-mode-button="junqi">军棋管理</button><button type="button" data-admin-mode-button="holdem">德州扑克管理</button><button type="button" data-admin-mode-button="ddz">斗地主管理</button></div><div class="admin-key-row"><label><span>管理密钥</span><input id="admin-key" class="text-input" type="password" /></label></div><nav id="admin-directory" class="admin-directory" aria-label="管理目录"></nav>
       <form id="account-form" class="admin-form">
-        <label><span>管理密钥</span><input id="admin-key" class="text-input" type="password" required /></label>
         <label><span>新账号（2–16 位）</span><input id="username" class="text-input" minlength="2" maxlength="16" required /></label>
         <label><span>初始密码</span><input id="password" class="text-input" type="password" minlength="6" required /></label>
         <label><span>账号类型</span><select id="account-type" class="text-input"><option value="human">玩家账号</option><option value="bot">BOT 账号（程序参赛）</option><option value="admin">管理员账号</option></select></label>
         <button class="primary-button" type="submit">创建账号</button>
       </form>
       <p id="admin-result" role="status"></p>
+      <section data-admin-mode="ddz" hidden><h2>斗地主管理</h2><button id="ddz-admin-refresh" type="button">加载 / 刷新</button><p id="ddz-admin-status" role="status"></p><h3>斗地主积分</h3><div class="holdem-admin-actions"><input id="ddz-account-search" placeholder="搜索账号"><label>所选账号积分<input id="ddz-batch-score" type="number" min="-1000000000" max="1000000000" step="1" value="0"></label></div><div id="ddz-admin-accounts"></div><h3>斗地主房间</h3><div id="ddz-admin-rooms"></div><section id="ddz-admin-chat" hidden></section></section>
+      <section data-admin-mode="holdem" hidden><h2>德州扑克管理</h2><p>仅限免费虚拟筹码，不支持充值、提现、转让或现实奖励。</p><button id="holdem-admin-refresh" type="button">加载 / 刷新</button><p id="holdem-admin-status" role="status"></p><h3>筹码发放设置</h3><form id="holdem-chip-settings" class="holdem-settings"><label>初始筹码<input id="holdem-initial-chips" type="number" min="0" max="1000000000" step="1" required></label><label>每日筹码<input id="holdem-daily-chips" type="number" min="0" max="1000000000" step="1" required></label><button type="submit">保存设置</button></form><p>初始筹码仅首次开通发放；每日金额从下一个北京时间零点生效。</p><h3>德州扑克权限与筹码</h3><div class="holdem-admin-actions"><input id="holdem-user-search" placeholder="搜索账号"><select id="holdem-user-filter"><option value="all">所有账号</option><option value="enabled">已开通</option><option value="disabled">未开通</option></select><label>每人增加筹码<input id="holdem-grant-amount" type="number" value="2000" min="1" max="1000000000" step="1"></label></div><div id="holdem-admin-accounts"></div><h3>筹码发放记录</h3><div id="holdem-chip-audit" class="holdem-audit"></div><h3>德州扑克房间</h3><div id="holdem-admin-rooms"></div><section id="holdem-admin-chat" hidden></section></section>
       <section><h2>在线用户 <span id="online-count"></span></h2><button id="refresh-online" type="button">刷新在线状态</button><small>每 10 秒更新；关闭独立页面后最多 45 秒转为离线。</small><div id="online-users" class="online-users">验证管理员身份后显示</div></section>
       <section><h2>图床管理</h2><div class="studio-toolbar"><button id="refresh-images" type="button">加载 / 刷新图片</button><button id="images-select-all" type="button">全选</button><button id="images-delete-selected" type="button">删除所选</button><span id="image-usage"></span></div><div id="image-gallery" class="image-gallery"></div></section>
       <section aria-labelledby="human-accounts-title"><h2 id="human-accounts-title">人类账号</h2><button id="refresh-human-accounts" class="secondary-button" type="button">加载 / 刷新</button><div id="human-account-list" class="account-list">输入管理密钥后加载列表</div></section>
@@ -29,6 +31,8 @@
     
     <link rel="stylesheet" href="/vendor/katex/katex.min.css">
     <script src="/vendor/marked/marked.umd.js"></script><script src="/vendor/dompurify/purify.min.js"></script><script src="/vendor/katex/katex.min.js"></script><script src="/vendor/katex/contrib/auto-render.min.js"></script>
+    <script type="module" src="/admin-holdem.js"></script>
+    <script type="module" src="/admin-sections.js"></script>
     <script type="module">
       import "/secure.js";
       import {addSelection,installBatch} from '/admin-batch.js';
@@ -339,5 +343,5 @@
         finally { button.disabled = false; }
       });
     </script>
-  <script type="module" src="/user-colors.js"></script></body>
+  <script type="module" src="/user-colors.js"></script><script type="module" src="/admin-ddz.js"></script></body>
 </html>

@@ -1,5 +1,9 @@
 # Junqi Rules
 
+## Free Texas Hold’em
+
+The Hold’em navigation link appears only after an administrator enables your player account. Use `/holdem` to create or join a table. Unapproved, revoked and bot accounts cannot use Hold’em APIs. Accounts, theme, language, encrypted images and chat components are shared with Junqi; Hold’em never changes Junqi ratings. Tables support 2–9 players. The Rules section on the Hold’em page explains betting, hand rankings, all-ins and side pots. Chips persist per account. Buy-ins debit your wallet and settled departures return chips. No borrowing or negative balances. Administrators configure initial and daily grants; daily grants use Beijing midnight. There are no deposits, withdrawals, transfers, paid entries or real-world prizes; cash gambling and off-site settlement are prohibited.
+
 ## Automatic draws in games with bots
 
 The old five-move bot loss rule has been removed. A game that started with a bot ends in a draw if either condition is reached:

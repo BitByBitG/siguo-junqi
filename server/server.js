@@ -1,4 +1,6 @@
 import {atomicWrite,resetRoomsOnce,writeRoomsArchive} from './room-archive.js';
+import {installHoldem} from './holdem.js';
+import {installDdz} from './ddz.js';
 import { ratingClass } from '../public/rating-colors.js';
 import { initDrawCounters, recordBotActivity, autoDrawReason } from './bot-activity.js';
 import { installSecure } from './secure.js';
@@ -251,7 +253,8 @@ function accountProfile(username) {
   if (!account) return { rating: INITIAL_RATING, ratedGames: 0, peakRating: INITIAL_RATING, ...ratingRank(INITIAL_RATING) };
   normalizeAccount(account);
   const info = ratingRank(account.rating);
-  return { blocked:!!account.blocked, globallyMuted:globalBans.includes(username), avatar: account.avatar?.id || null, signature:account.signature||'', accountType: account.type || "human", admin: !!account.admin, rating: account.rating, ratedGames: account.ratedGames, peakRating: account.peakRating, rank: info.rank, rankClass: info.rankClass, groupId:account.groupId||'default', groupName:groupData.groups[account.groupId||'default']?.name||'默认分组', botLocalTurnLimitMs:account.type==='bot'?account.botLocalTurnLimitMs:null, botServerTurnLimitMs:account.type==='bot'?account.botServerTurnLimitMs:null, botServerHostingDisabled:account.type==='bot'?!!account.botServerHostingDisabled:null };
+  info.holdemEnabled=account.type!=='bot'&&!account.blocked&&account.holdemEnabled===true;
+  return { holdemEnabled:info.holdemEnabled, blocked:!!account.blocked, globallyMuted:globalBans.includes(username), avatar: account.avatar?.id || null, signature:account.signature||'', accountType: account.type || "human", admin: !!account.admin, rating: account.rating, ratedGames: account.ratedGames, peakRating: account.peakRating, rank: info.rank, rankClass: info.rankClass, groupId:account.groupId||'default', groupName:groupData.groups[account.groupId||'default']?.name||'默认分组', botLocalTurnLimitMs:account.type==='bot'?account.botLocalTurnLimitMs:null, botServerTurnLimitMs:account.type==='bot'?account.botServerTurnLimitMs:null, botServerHostingDisabled:account.type==='bot'?!!account.botServerHostingDisabled:null };
 }
 
 function loadAccounts() {
@@ -408,7 +411,8 @@ function authorizeRequest(req){
   const session=sessions.get(String(req.headers.authorization||'').replace(/^Bearer /,''));
   return session&&session.expiresAt>Date.now()&&accounts[session.username]?{username:session.username}:null;
 }
-function canEnter(username,code){return rooms.has(code)&&[...io.sockets.sockets.values()].some(s=>authenticated(s)&&s.data.username===username&&s.data.roomCode===code);}
+let holdem,ddz;
+function canEnter(username,code){return ddz?.canEnter(username,code)||holdem?.canEnter(username,code)||(rooms.has(code)&&[...io.sockets.sockets.values()].some(s=>authenticated(s)&&s.data.username===username&&s.data.roomCode===code));}
 installSecure(app,io,authenticated);
 app.use((req,res,next)=>{
   if(req.body && typeof req.body.username==='string')req.body.username=canonicalUsername(req.body.username);
@@ -423,6 +427,8 @@ app.use((req,res,next)=>{
 });
 installProfiles(app,{accounts,authorize:authorizeRequest,accountProfile,saveAccounts,rooms,onAvatar:()=>{broadcastChat();for(const room of rooms.values())emitRoom(room);}});
 installImages(app,{authorize:authorizeRequest,canEnter,isAdmin:req=>{const user=authorizeRequest(req);return !!user&&(user.admin||isSuperAdmin(user.username));},isMuted:(username,scope)=>{
+  if(scope.startsWith('ddz:'))return ddz?.isMuted(username,scope)||false;
+  if(scope.startsWith('holdem:'))return holdem?.isMuted(username,scope)||false;
   if(scope.startsWith('group:'))return (groupData.groups[cleanGroupId(scope.slice(6))]?.muted||[]).includes(username)||globalBans.includes(username);
   return (scope==='lobby'?lobbyMutes:rooms.get(scope)?.chatMuted||[]).includes(username)||globalBans.includes(username);
 },canUpload:username=>groupCan(username,'images'),canGroup:(username,id)=>isSuperAdmin(username)||groupForUser(username)?.id===cleanGroupId(id)});
@@ -462,6 +468,12 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 app.use("/api/admin", requireAdmin);
+holdem=installHoldem(app,{accounts,authorize:authorizeRequest,profile:accountProfile,saveAccounts,canonicalUsername,changeChat,groupCan,canCreateRoom,useRoomQuota,isGloballyMuted:n=>globalBans.includes(n),dataDir:path.dirname(ACCOUNTS_FILE),isAdmin:req=>{const u=authorizeRequest(req);return !!u&&(u.admin||isSuperAdmin(u.username));},onAccountChange:username=>{for(const socket of io.sockets.sockets.values())if(authenticated(socket)&&socket.data.username===username)socket.emit('account-profile',accountProfile(username));}});
+ddz=installDdz(app,{accounts,authorize:authorizeRequest,profile:accountProfile,saveAccounts,canonicalUsername,changeChat,groupCan,canCreateRoom,useRoomQuota,isGloballyMuted:n=>globalBans.includes(n),dataDir:path.dirname(ACCOUNTS_FILE),isAdmin:req=>{const u=authorizeRequest(req);return !!u&&(u.admin||isSuperAdmin(u.username));},onAccountChange:username=>{for(const socket of io.sockets.sockets.values())if(authenticated(socket)&&socket.data.username===username)socket.emit('account-profile',accountProfile(username));}});
+app.get('/holdem',(_req,res)=>res.redirect('/holdem/contest'));
+app.get(['/ddz','/ddz/contest','/ddz/ratings','/ddz/rules','/ddz/room/:id'],(_req,res)=>res.sendFile(path.join(__dirname,'../public/ddz.html')));
+app.get('/holdem/rules',(_req,res)=>res.sendFile(path.join(__dirname,'../public/holdem-rules.html')));
+app.get(['/holdem/contest','/holdem/ratings','/holdem/room/:id'],(_req,res)=>res.sendFile(path.join(__dirname,'../public/holdem.html')));
 app.get('/room/:code', (_req, res) => res.sendFile(path.join(__dirname, '../public/index.html')));
 app.get('/contests.html', (_req, res) => res.sendFile(path.join(__dirname, '../public/index.html')));
 app.get('/profile/:username', (_req, res) => res.sendFile(path.join(__dirname, '../public/profile.html')));

@@ -1,0 +1,41 @@
+/* Poker uses Junqi's game-layout, player-card, topbar and chat-expanded components. */
+.poker-room-page .holdem-shell{width:100%;max-width:none;margin:0 0 24px}
+.poker-room-page .holdem-heading,.poker-room-page .holdem-notice{display:none}
+.poker-room-page #holdem-wallet{margin:0 20px 12px;padding:8px 12px}
+.poker-room-page #holdem-status,.poker-room-page #ddz-status{margin:0 20px}
+.poker-room-page .poker-toolbar{display:flex;align-items:center;padding:8px 20px;border-bottom:1px solid var(--line);gap:8px}
+.poker-toolbar strong{margin-right:auto}.poker-toolbar code{font-size:13px}
+.poker-room-page .poker-game-layout{gap:0;margin:0;grid-template-columns:clamp(17rem,20vw,21rem) minmax(0,1fr) clamp(18rem,22vw,23rem);align-items:stretch;min-height:calc(100vh - 190px)}
+.poker-room-page .poker-game-layout>.panel{padding:1.3rem;border:0;border-radius:0;background:#22272e}
+.poker-room-page .poker-game-layout>.players-panel{border-right:1px solid var(--line)}
+.poker-room-page .poker-game-layout>.log-panel{border-left:1px solid var(--line)}
+.theme-light.poker-room-page .poker-game-layout>.panel,.theme-light .poker-room-page .poker-game-layout>.panel{background:#fff}
+.poker-room-page .holdem-board-panel{padding:1.2rem;border:0;min-width:0}
+.poker-room-page .panel-heading{align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:1rem}
+.poker-room-page .panel-heading h2{font-size:.95rem;letter-spacing:.08em;margin:0 auto 0 0}
+.poker-room-page .players-list{display:grid;gap:.55rem}
+.poker-player-body{min-width:0;flex:1;display:grid;gap:6px;overflow-wrap:anywhere}.poker-player-body a{font-weight:700}.poker-player-body small{font-size:12px;color:var(--muted)}
+.poker-room-page .player-card{margin:0}.poker-room-page .player-card.is-current{border-color:#e8bf55}.poker-room-page .player-card .user-avatar{width:34px;height:34px;flex:0 0 34px}
+.poker-room-page .player-card button{font-size:12px;padding:3px 6px;min-height:26px}
+.shared-room-chat{position:relative}.shared-room-chat .panel-heading{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.shared-room-chat .panel-heading h2{margin:0 auto 0 0}
+.shared-room-chat .panel-heading .icon-button{border:0;background:transparent;min-height:0;padding:.4rem;font-size:.85rem}
+.shared-room-chat .chat-list{min-height:0}.shared-room-chat .chat-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.35rem}
+.shared-room-chat .chat-form textarea{box-sizing:border-box;width:100%;min-width:0}.shared-room-chat .chat-form button{align-self:stretch;width:auto}
+:root .shared-room-chat.chat-expanded{position:fixed;inset:0;z-index:10000;margin:0;padding:16px;display:flex;flex-direction:column;border:0;border-radius:0;background:#22272e;box-sizing:border-box}
+:root .shared-room-chat.chat-expanded .chat-list{flex:1;height:auto;min-height:0;max-height:none;overflow:auto}
+:root .shared-room-chat.chat-expanded .panel-heading,:root .shared-room-chat.chat-expanded .chat-form{flex-shrink:0}
+.theme-light .shared-room-chat.chat-expanded{background:#fff!important}
+.poker-room-page .battle-log{max-height:calc(100vh - 260px);overflow:auto}
+.poker-room-page .ddz-table{border:1px solid var(--line);border-radius:6px;background:transparent}
+.poker-room-page .holdem-table{margin:16px 0 24px;height:520px;min-height:520px}
+@media(max-width:1200px){.poker-room-page .poker-game-layout{grid-template-columns:260px minmax(0,1fr)}.poker-room-page .poker-game-layout>.log-panel{grid-column:1/-1;border-top:1px solid var(--line);border-left:0}.poker-room-page .battle-log{max-height:240px}}
+@media(max-width:740px){.poker-room-page .poker-game-layout{display:flex;flex-direction:column;min-height:0}.poker-room-page .poker-game-layout>.holdem-board-panel{order:0;padding:12px}.poker-room-page .poker-game-layout>.players-panel{order:1;border:0;border-top:1px solid var(--line)}.poker-room-page .poker-game-layout>.log-panel{order:2}.poker-room-page .holdem-table{height:480px;min-height:480px}.poker-room-page .player-card{min-height:60px}.poker-toolbar strong{flex-basis:100%}}
+/* Use the existing Junqi button classes; neutralize earlier poker-only sizing. */
+.holdem-shell button.secondary-button:not(.chat-recall){min-height:34px;padding:6px 12px;border-radius:6px;font-size:14px;line-height:20px;font-weight:600;box-shadow:none}
+.holdem-shell .panel-heading button.secondary-button,.poker-toolbar button.secondary-button{min-height:30px;padding:4px 9px;font-size:13px}
+.holdem-shell .ddz-hand button.secondary-button{min-height:52px;padding:0;border:0;border-radius:3px;background:transparent;font-size:12px}
+.holdem-actions select{min-height:34px;padding:6px 9px;font:inherit;background:var(--panel,#2d333b);color:var(--ink);border:1px solid var(--line);border-radius:6px}.theme-light .holdem-actions select{background:#fff}
+.poker-room-page .player-state{max-width:95px;text-align:right;font-size:12px;flex-shrink:0}.poker-room-page .player-info{min-width:0;flex:1}.poker-room-page .player-name{overflow-wrap:anywhere;white-space:normal}.poker-room-page .player-status{font-size:12px;overflow-wrap:anywhere}.poker-room-page .player-state small{display:block;margin-top:4px}
+.poker-room-page .spectators-list{margin:16px 0;padding-top:12px;border-top:1px solid var(--line);font-size:12px}.poker-room-page .spectator-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px}.poker-room-page .spectator-row small{color:var(--muted)}
+.poker-settlement{margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--line);overflow:auto}.poker-settlement .rating-delta{display:table-cell;margin:0}.poker-settlement th,.poker-settlement td{padding:6px!important;font-size:12px}
+.toast{z-index:30000}.shared-room-chat .reaction-add{min-height:0;width:auto;padding:2px 5px;font-size:13px}.shared-room-chat .chat-actions button{min-height:0!important;line-height:normal;padding:2px 5px;font-size:12px}

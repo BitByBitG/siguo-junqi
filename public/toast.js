@@ -1,0 +1,2 @@
+let timer,last='',lastTime=0;
+export function showToast(message,kind='error'){if(!message)return;message=String(message);if(message===last&&Date.now()-lastTime<2800)return;last=message;lastTime=Date.now();let toast=document.querySelector('#toast');if(!toast){toast=document.createElement('div');toast.id='toast';toast.setAttribute('role','status');toast.setAttribute('aria-live','polite');document.body.append(toast);}clearTimeout(timer);toast.textContent=message;toast.className='toast show '+(kind==='success'?'success':'');timer=setTimeout(()=>{toast.className='toast';},2800);}
