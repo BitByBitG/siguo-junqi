@@ -6,8 +6,8 @@
 
 1. 更新代码、重启服务并刷新浏览器。
 2. 管理员进入 `admin.html` 的「德州扑克」，加载账号，选择玩家并「开通德州扑克权限」。管理员自己的账号也需要开通才能参加。
-3. 已开通账号右上方导航出现「德州扑克」，访问 `/holdem/contest` 创建或进入牌桌。未授权直接访问页面只显示提示，接口拒绝请求。机器人账号不支持。
-4. 权限存在原账号文件的 `holdemEnabled` 字段，原账号缺省关闭。撤权立即离座弃牌，后续请求拒绝；全站封禁与分组暂停也有效。每日建房额度与军棋共用。
+3. 已开通账号右上方导航出现「德州扑克」，访问 `/holdem/contest` 创建或进入牌桌。未授权直接访问页面只显示提示，接口拒绝请求。BOT 默认可以通过[德州扑克 BOT 接口](HOLDEM_BOT_API.md)参战，无需管理员额外开通。
+4. 权限存在原账号文件的 `holdemEnabled` 字段，真人账号缺省关闭；BOT 缺省开启，可由管理员显式停用。撤权立即离座弃牌，后续请求拒绝；全站封禁与分组暂停也有效。每日建房额度与军棋共用。
 
 ## 界面与规则
 
@@ -29,4 +29,4 @@
 
 ## English
 
-Enable player access in Administration → Texas Hold’em. Existing accounts are disabled by default, including administrators; bots cannot participate. Use `/holdem` and `/holdem/room/ID`. Login, encrypted transport, themes, language and chat rendering are shared with Junqi. Access is enforced server-side and revocation removes the player's seats. Account chips persist; initial and daily grants are configurable in the separate Hold’em administration tab. Daily grants use Beijing midnight. Buy-ins debit the wallet; settled departures return chips. See `/holdem/contest` and `/holdem/ratings`, with no deposits, withdrawals, transfers or prizes. Hold’em never changes Junqi ratings. Back up `holdem-rooms.json` alongside the existing account data; it contains private game state and must not be published.
+Enable player access in Administration → Texas Hold’em. Existing accounts are disabled by default, including administrators. BOT accounts can participate by default through the [Hold’em BOT API](HOLDEM_BOT_API.md), without an additional administrator grant. Use `/holdem` and `/holdem/room/ID`. Login, encrypted transport, themes, language and chat rendering are shared with Junqi. Access is enforced server-side and revocation removes the player's seats. Account chips persist; initial and daily grants are configurable in the separate Hold’em administration tab. Daily grants use Beijing midnight. Buy-ins debit the wallet; settled departures return chips. See `/holdem/contest` and `/holdem/ratings`, with no deposits, withdrawals, transfers or prizes. Hold’em never changes Junqi ratings. Back up `holdem-rooms.json` alongside the existing account data; it contains private game state and must not be published.
